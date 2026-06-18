@@ -11,6 +11,7 @@ import {
   FileCheck2,
   LayoutDashboard,
   LogOut,
+  Menu,
   MessageSquareText,
   Settings,
   ShieldCheck,
@@ -25,7 +26,6 @@ import { Button, Field, inputClass } from './ui';
 const nav = {
   SUPER_ADMIN: [
     ['/admin/dashboard', 'Dashboard', LayoutDashboard],
-    ['/admin/users', 'Users', Users],
     ['/admin/bds', 'BDs', Users],
     ['/admin/closers', 'Closers', ShieldCheck],
     ['/admin/tech-stacks', 'Tech Stacks', BriefcaseBusiness],
@@ -55,6 +55,7 @@ export function AppShell({ children, role }: { children: ReactNode; role: Sessio
   const pathname = usePathname();
   const [session, setCurrentSession] = useState<Session | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
 
   useEffect(() => {
@@ -71,11 +72,15 @@ export function AppShell({ children, role }: { children: ReactNode; role: Sessio
   }, [role, router]);
 
   const title = useMemo(() => nav[role].find(([href]) => href === pathname)?.[1] ?? 'LeadOps CRM', [pathname, role]);
+  useEffect(() => {
+    setMobileNavOpen(false);
+    setSettingsOpen(false);
+  }, [pathname]);
 
   if (!session) return <div className="grid min-h-screen place-items-center text-sm font-semibold text-slate-600">Loading CRM...</div>;
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen w-full overflow-x-hidden">
       <aside className="fixed inset-y-0 left-0 z-20 hidden w-72 overflow-y-auto border-r border-red-900/30 bg-neutral-950 px-4 py-5 text-white lg:block">
         <div className="mb-6 rounded-lg bg-white px-3 py-2 text-xl font-black tracking-tight text-neutral-950">
           CodeBricks <span className="text-brand-red">LeadOps</span>
@@ -103,11 +108,20 @@ export function AppShell({ children, role }: { children: ReactNode; role: Sessio
         </nav>
       </aside>
 
-      <main className="min-w-0 flex-1 lg:pl-72">
-        <header className="sticky top-0 z-10 flex min-h-16 items-center justify-between border-b border-slate-200 bg-white/90 px-5 backdrop-blur">
-          <div>
-            <h1 className="text-xl font-black tracking-tight">{title}</h1>
-            <p className="text-xs font-semibold text-slate-500">{session.user.role.replaceAll('_', ' ')}</p>
+      <main className="min-w-0 flex-1 overflow-x-hidden lg:pl-72">
+        <header className="sticky top-0 z-10 flex min-h-16 items-center justify-between gap-3 border-b border-slate-200 bg-white/90 px-3 backdrop-blur sm:px-5">
+          <div className="flex min-w-0 items-center gap-3">
+            <button
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-neutral-950 text-white hover:bg-neutral-800 lg:hidden"
+              title="Open navigation"
+              onClick={() => setMobileNavOpen(true)}
+            >
+              <Menu size={19} />
+            </button>
+            <div className="min-w-0">
+              <h1 className="truncate text-lg font-black tracking-tight sm:text-xl">{title}</h1>
+              <p className="text-xs font-semibold text-slate-500">{session.user.role.replaceAll('_', ' ')}</p>
+            </div>
           </div>
           <div className="relative">
             <button
@@ -143,8 +157,48 @@ export function AppShell({ children, role }: { children: ReactNode; role: Sessio
             ) : null}
           </div>
         </header>
-        <div className="p-5">{children}</div>
+        <div className="min-w-0 p-3 sm:p-5">{children}</div>
       </main>
+      {mobileNavOpen ? (
+        <div className="fixed inset-0 z-40 lg:hidden">
+          <button className="absolute inset-0 bg-slate-950/60" title="Close navigation" onClick={() => setMobileNavOpen(false)} />
+          <aside className="relative z-10 h-full w-[min(20rem,86vw)] overflow-y-auto border-r border-red-900/30 bg-neutral-950 px-4 py-5 text-white shadow-2xl">
+            <div className="mb-5 flex items-center justify-between gap-3">
+              <div className="rounded-lg bg-white px-3 py-2 text-lg font-black tracking-tight text-neutral-950">
+                CodeBricks <span className="text-brand-red">LeadOps</span>
+              </div>
+              <button
+                className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-white/10 text-white hover:bg-white/20"
+                title="Close navigation"
+                onClick={() => setMobileNavOpen(false)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="mb-4 rounded-lg border border-white/10 bg-white/5 p-3">
+              <p className="truncate text-sm font-bold">{session.user.name}</p>
+              <p className="mt-1 break-all text-xs text-slate-300">{session.user.email}</p>
+            </div>
+            <nav className="grid gap-1">
+              {nav[role].map(([href, labelText, Icon]) => {
+                const active = pathname === href;
+                return (
+                  <Link
+                    key={href}
+                    href={href}
+                    className={`flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-semibold transition ${
+                      active ? 'bg-red-600 text-white' : 'text-slate-300 hover:bg-white/10 hover:text-white'
+                    }`}
+                  >
+                    <Icon size={17} />
+                    {labelText}
+                  </Link>
+                );
+              })}
+            </nav>
+          </aside>
+        </div>
+      ) : null}
       {profileOpen ? (
         <ProfileModal
           session={session}
@@ -204,10 +258,10 @@ function ProfileModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 p-4">
-      <section className="w-full max-w-lg rounded-lg bg-white shadow-2xl">
-        <header className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-          <div>
+    <div className="fixed inset-0 z-50 grid place-items-center overflow-x-hidden bg-slate-950/60 p-3 sm:p-4">
+      <section className="max-h-[92vh] w-full max-w-lg min-w-0 overflow-auto rounded-lg bg-white shadow-2xl">
+        <header className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-4 sm:px-5">
+          <div className="min-w-0">
             <h2 className="text-lg font-black tracking-tight">Profile</h2>
             <p className="mt-1 text-sm font-semibold text-slate-500">{session.user.role.replaceAll('_', ' ')}</p>
           </div>
@@ -215,7 +269,7 @@ function ProfileModal({
             <X size={16} />
           </Button>
         </header>
-        <form onSubmit={submit} className="grid gap-4 p-5">
+        <form onSubmit={submit} className="grid min-w-0 gap-4 p-4 sm:p-5">
           <Field label="Name">
             <input className={inputClass} value={name} onChange={(event) => setName(event.target.value)} required />
           </Field>

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, ForbiddenException, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -21,6 +21,12 @@ export class UsersController {
   @Get()
   @Roles(Role.SUPER_ADMIN, Role.BD, Role.CLOSER)
   findAll(@CurrentUser() actor: AuthenticatedUser, @Query('role') role?: Role) {
+    if (!role) {
+      throw new BadRequestException('A role filter is required. Use role=BD or role=CLOSER.');
+    }
+    if (role !== Role.BD && role !== Role.CLOSER) {
+      throw new BadRequestException('Only BD and Closer user lists are available.');
+    }
     if ((actor.role === Role.CLOSER || actor.role === Role.BD) && role !== Role.CLOSER) {
       throw new ForbiddenException('This role can only list closers');
     }

@@ -5,7 +5,7 @@ function cn(...classes: Array<string | undefined | false>) {
 }
 
 export function Card({ children, className }: { children: ReactNode; className?: string }) {
-  return <section className={cn('rounded-lg border border-slate-200 bg-white p-5 shadow-panel', className)}>{children}</section>;
+  return <section className={cn('min-w-0 rounded-lg border border-slate-200 bg-white p-4 shadow-panel sm:p-5', className)}>{children}</section>;
 }
 
 export function Button({
@@ -22,7 +22,7 @@ export function Button({
   };
   return (
     <button
-      className={cn('inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-semibold transition', styles[variant], className)}
+      className={cn('inline-flex min-h-10 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-semibold transition', styles[variant], className)}
       {...props}
     >
       {children}
@@ -43,7 +43,7 @@ export function Badge({ children, tone = 'slate' }: { children: ReactNode; tone?
 
 export function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+    <label className="grid min-w-0 gap-1.5 text-sm font-semibold text-slate-700">
       {label}
       {children}
     </label>
@@ -51,6 +51,6 @@ export function Field({ label, children }: { label: string; children: ReactNode 
 }
 
 export const inputClass =
-  'w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none ring-brand-red/20 transition focus:border-brand-red focus:ring-4';
+  'min-h-10 min-w-0 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none ring-brand-red/20 transition focus:border-brand-red focus:ring-4';
 
 export const textareaClass = `${inputClass} resize-y leading-6`;

@@ -2,11 +2,15 @@ import { emitToast } from '@/components/toaster';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api';
 let isRedirectingToLogin = false;
+let refreshPromise: Promise<Session | null> | null = null;
 
 type ApiOptions = RequestInit & {
   successMessage?: string;
   suppressToast?: boolean;
+  skipAuthRefresh?: boolean;
 };
+
+type TokenRefreshResponse = Pick<Session, 'accessToken' | 'refreshToken'>;
 
 export type Session = {
   accessToken: string;
@@ -34,16 +38,32 @@ export function setSession(session: Session | null) {
 
 export async function api<T>(path: string, options: ApiOptions = {}): Promise<T> {
   const session = getSession();
-  const { successMessage, suppressToast, ...requestOptions } = options;
-  const response = await fetch(`${API_URL}${path}`, {
+  const { successMessage, suppressToast, skipAuthRefresh, ...requestOptions } = options;
+  const response = await sendApiRequest(path, requestOptions, session?.accessToken);
+
+  if (response.status === 401 && !skipAuthRefresh && session?.refreshToken && typeof window !== 'undefined' && window.location.pathname !== '/login') {
+    const refreshedSession = await refreshSession(session);
+    if (refreshedSession) {
+      const retryResponse = await sendApiRequest(path, requestOptions, refreshedSession.accessToken);
+      return handleApiResponse<T>(retryResponse, requestOptions, successMessage, suppressToast);
+    }
+  }
+
+  return handleApiResponse<T>(response, requestOptions, successMessage, suppressToast);
+}
+
+async function sendApiRequest(path: string, requestOptions: RequestInit, accessToken?: string) {
+  return fetch(`${API_URL}${path}`, {
     ...requestOptions,
     headers: {
       'Content-Type': 'application/json',
-      ...(session ? { Authorization: `Bearer ${session.accessToken}` } : {}),
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       ...requestOptions.headers,
     },
   });
+}
 
+async function handleApiResponse<T>(response: Response, requestOptions: RequestInit, successMessage?: string, suppressToast?: boolean): Promise<T> {
   if (response.status === 401 && typeof window !== 'undefined' && window.location.pathname !== '/login') {
     const message = 'Session expired. Please log in again.';
     setSession(null);
@@ -68,6 +88,33 @@ export async function api<T>(path: string, options: ApiOptions = {}): Promise<T>
   }
 
   return response.json() as Promise<T>;
+}
+
+async function refreshSession(session: Session): Promise<Session | null> {
+  refreshPromise ??= requestTokenRefresh(session).finally(() => {
+    refreshPromise = null;
+  });
+  return refreshPromise;
+}
+
+async function requestTokenRefresh(session: Session): Promise<Session | null> {
+  try {
+    const response = await sendApiRequest(
+      '/auth/refresh',
+      {
+        method: 'POST',
+        body: JSON.stringify({ refreshToken: session.refreshToken }),
+      },
+      undefined,
+    );
+    if (!response.ok) return null;
+    const tokens = (await response.json()) as TokenRefreshResponse;
+    const nextSession = { ...session, ...tokens };
+    setSession(nextSession);
+    return nextSession;
+  } catch {
+    return null;
+  }
 }
 
 export function roleHome(role: Session['user']['role']) {

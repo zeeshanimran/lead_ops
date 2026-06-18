@@ -28,14 +28,14 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="grid min-h-screen place-items-center px-4">
+    <main className="grid min-h-screen min-w-0 place-items-center overflow-x-hidden px-4">
       <Card className="w-full max-w-md">
         <div className="mb-6">
           <div className="mb-3 inline-flex h-11 w-11 items-center justify-center rounded-lg bg-neutral-950 text-white"><LockKeyhole size={20} /></div>
           <h1 className="text-2xl font-black tracking-tight">CodeBricks LeadOps</h1>
           <p className="mt-1 text-sm text-slate-500">Sign in to your Phase 1 CRM workspace.</p>
         </div>
-        <form onSubmit={submit} className="grid gap-4">
+        <form onSubmit={submit} className="grid min-w-0 gap-4">
           <Field label="Email"><input className={inputClass} type="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></Field>
           <Field label="Password"><input className={inputClass} type="password" value={password} onChange={(e) => setPassword(e.target.value)} required /></Field>
           {error ? <p className="rounded-md bg-red-50 p-3 text-sm font-semibold text-red-700">{error}</p> : null}

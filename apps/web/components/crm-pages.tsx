@@ -102,11 +102,11 @@ function PaginationControls({
 }: ReturnType<typeof usePagination>) {
   if (totalItems <= pageSize) return null;
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-sm text-slate-600">
+    <div className="flex flex-col items-stretch justify-between gap-3 border-t border-slate-200 px-4 py-3 text-sm text-slate-600 sm:flex-row sm:items-center">
       <span>
         Showing <strong>{from}</strong>-<strong>{to}</strong> of <strong>{totalItems}</strong>
       </span>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between gap-2 sm:justify-start">
         <Button variant="light" disabled={page === 1} className={page === 1 ? 'opacity-50' : ''} onClick={() => setPage(page - 1)}>
           Previous
         </Button>
@@ -134,15 +134,15 @@ export function DashboardPage({ role }: { role: Role }) {
   ];
 
   return (
-    <div className="grid gap-5">
-      <section className="rounded-lg border border-red-900/20 bg-neutral-950 p-6 text-white shadow-panel">
-        <h2 className="text-2xl font-black tracking-tight">{title}</h2>
+    <div className="grid min-w-0 gap-5">
+      <section className="rounded-lg border border-red-900/20 bg-neutral-950 p-4 text-white shadow-panel sm:p-6">
+        <h2 className="text-xl font-black tracking-tight sm:text-2xl">{title}</h2>
         <p className="mt-2 max-w-3xl text-sm text-slate-300">
           Lead operations by parent lead, scheduled calls, closer feedback, and timeline movement.
         </p>
       </section>
       {error ? <Card className="text-sm font-semibold text-red-700">{error}</Card> : null}
-      <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
+      <div className="grid min-w-0 gap-4 md:grid-cols-3 xl:grid-cols-6">
         {cards.map(([name, value]) => (
           <Card key={String(name)}>
             <p className="text-xs font-bold uppercase text-slate-500">{name}</p>
@@ -150,7 +150,7 @@ export function DashboardPage({ role }: { role: Role }) {
           </Card>
         ))}
       </div>
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid min-w-0 gap-4 lg:grid-cols-3">
         <SummaryCard title="Lead Status Summary" rows={(data?.leadStatuses ?? []).map((row) => [row.status, row._count])} />
         <SummaryCard title="Call Status Summary" rows={(data?.callStatuses ?? []).map((row) => [row.status, row._count])} />
         <SummaryCard title="Call Stage Summary" rows={(data?.callStages ?? []).map((row) => [row.callStage, row._count])} />
@@ -190,9 +190,9 @@ export function UsersPage({ roleFilter }: { roleFilter?: Role }) {
   };
 
   return (
-    <div className="grid gap-5">
+    <div className="grid min-w-0 gap-5">
       <Card>
-        <form onSubmit={submit} className={`grid gap-3 ${roleFilter ? 'md:grid-cols-3' : 'md:grid-cols-4'}`}>
+        <form onSubmit={submit} className={`grid min-w-0 gap-3 ${roleFilter ? 'md:grid-cols-3' : 'md:grid-cols-4'}`}>
           <Field label="Name"><input className={inputClass} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></Field>
           <Field label="Email"><input className={inputClass} type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required /></Field>
           {!roleFilter ? (
@@ -225,7 +225,7 @@ export function UsersPage({ roleFilter }: { roleFilter?: Role }) {
                   <td>{user.email}</td>
                   <td><Badge>{label(user.role)}</Badge></td>
                   <td><Badge tone={user.status === 'ACTIVE' ? 'green' : 'red'}>{label(user.status)}</Badge></td>
-                  <td className="flex gap-2">
+                  <td><div className="flex flex-wrap gap-2">
                     {user.role === 'SUPER_ADMIN' ? <span className="text-sm font-semibold text-slate-500">Protected</span> : (
                       <>
                         {user.status === 'INACTIVE' ? (
@@ -245,7 +245,7 @@ export function UsersPage({ roleFilter }: { roleFilter?: Role }) {
                         </Button>
                       </>
                     )}
-                  </td>
+                  </div></td>
                 </tr>
               ))}
             </tbody>
@@ -270,10 +270,10 @@ export function JobsPage({ bdMode = false }: { bdMode?: boolean }) {
   };
 
   return (
-    <div className="grid gap-5">
+    <div className="grid min-w-0 gap-5">
       {bdMode ? (
         <Card>
-          <form onSubmit={submit} className="grid gap-3 lg:grid-cols-5">
+          <form onSubmit={submit} className="grid min-w-0 gap-3 lg:grid-cols-5">
             <Field label="Platform"><input className={inputClass} value={form.platform} onChange={(e) => setForm({ ...form, platform: e.target.value })} required /></Field>
             <Field label="Company"><input className={inputClass} value={form.companyName} onChange={(e) => setForm({ ...form, companyName: e.target.value })} required /></Field>
             <Field label="Tech Stack">
@@ -290,7 +290,7 @@ export function JobsPage({ bdMode = false }: { bdMode?: boolean }) {
           </form>
         </Card>
       ) : null}
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid min-w-0 gap-4 md:grid-cols-3">
         <Card><p className="text-xs font-bold uppercase text-slate-500">Total Jobs</p><p className="mt-2 text-3xl font-black">{data?.length ?? 0}</p></Card>
         <Card><p className="text-xs font-bold uppercase text-slate-500">Applied Today</p><p className="mt-2 text-3xl font-black">{appliedToday}</p></Card>
         <Card><p className="text-xs font-bold uppercase text-slate-500">Not Applied</p><p className="mt-2 text-3xl font-black">{(data ?? []).filter((job) => job.status === 'NOT_APPLIED').length}</p></Card>
@@ -318,10 +318,10 @@ function JobsTable({ jobs, reload, canApply }: { jobs: Job[]; reload: () => Prom
                 <td>{job.techStack}</td>
                 <td><Badge tone={statusTone(job.status)}>{label(job.status)}</Badge></td>
                 <td>{job.bd?.name ?? '-'}</td>
-                <td className="flex gap-2">
-                  <a className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-3 py-2 text-sm font-bold" href={job.jobLink} target="_blank"><ExternalLink size={14} /> Open</a>
+                <td><div className="flex flex-wrap gap-2">
+                  <a className="inline-flex min-h-10 items-center gap-1 rounded-md bg-slate-100 px-3 py-2 text-sm font-bold" href={job.jobLink} target="_blank"><ExternalLink size={14} /> Open</a>
                   {canApply ? <Button onClick={async () => { window.open(job.jobLink, '_blank'); await api(`/jobs/${job.id}/apply`, { method: 'PATCH' }); await reload(); }}><Check size={14} /> Apply</Button> : null}
-                </td>
+                </div></td>
               </tr>
             ))}
           </tbody>
@@ -355,7 +355,7 @@ export function LeadSubmissionPage() {
   };
   return (
     <Card>
-      <form onSubmit={submit} className="grid gap-3 md:grid-cols-3">
+      <form onSubmit={submit} className="grid min-w-0 gap-3 md:grid-cols-3">
         <Field label="Company / Lead"><input className={inputClass} value={form.companyName} onChange={(e) => setForm({ ...form, companyName: e.target.value })} required /></Field>
         <Field label="Profile Name"><input className={inputClass} value={form.profileName} onChange={(e) => setForm({ ...form, profileName: e.target.value })} required /></Field>
         <Field label="Resume/Profile URL"><input className={inputClass} type="url" value={form.resumeUrl} onChange={(e) => setForm({ ...form, resumeUrl: e.target.value })} /></Field>
@@ -385,7 +385,7 @@ export function LeadsPage({ status, mode = 'list' }: { status?: LeadStatus; mode
   const leads = data ?? [];
   const leadPagination = usePagination(leads);
   return (
-    <div className="grid gap-5">
+    <div className="grid min-w-0 gap-5">
       {error ? <Card className="text-sm font-semibold text-red-700">{error}</Card> : null}
       <Card className="p-0">
         <div className="table-wrap">
@@ -428,7 +428,7 @@ function ApprovalActions({ lead, reload }: { lead: Lead; reload: () => Promise<v
   const canReview = lead.status === 'PENDING_APPROVAL';
   const canReopen = ['DISMISSED', 'REJECTED', 'CLOSED'].includes(lead.status);
   return (
-    <div className="grid min-w-72 gap-2">
+    <div className="grid min-w-0 max-w-sm gap-2 sm:min-w-64">
       {canReview ? (
         <select className={inputClass} value={assignedBdId} onChange={(e) => setAssignedBdId(e.target.value)}>
           <option value="">Assign BD</option>
@@ -473,7 +473,7 @@ function ScheduleCallForm({ leadId, compact = false, onSaved }: { leadId: string
     await onSaved();
   };
   return (
-    <form onSubmit={submit} className={`grid gap-2 ${compact ? 'min-w-80' : 'md:grid-cols-3'}`}>
+    <form onSubmit={submit} className={`grid min-w-0 gap-2 ${compact ? 'max-w-sm sm:min-w-64' : 'md:grid-cols-3'}`}>
       <select className={inputClass} value={form.closerId} onChange={(e) => setForm({ ...form, closerId: e.target.value })} required><option value="">Closer</option>{(closers ?? []).map((closer) => <option key={closer.id} value={closer.id}>{closer.name}</option>)}</select>
       <select className={inputClass} value={form.callStage} onChange={(e) => setForm({ ...form, callStage: e.target.value as CallStage })}>{callStages.map((value) => <option key={value} value={value}>{label(value)}</option>)}</select>
       <input className={inputClass} type="datetime-local" value={form.scheduledAt} onChange={(e) => setForm({ ...form, scheduledAt: e.target.value })} required />
@@ -495,7 +495,7 @@ export function LeadDetailPage({ role, id }: { role: 'admin' | 'bd'; id: string 
   if (error) return <Card className="text-sm font-semibold text-red-700">{error}</Card>;
   if (!lead) return <Card>Loading lead...</Card>;
   return (
-    <div className="grid gap-5">
+    <div className="grid min-w-0 gap-5">
       <Card>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -505,7 +505,7 @@ export function LeadDetailPage({ role, id }: { role: 'admin' | 'bd'; id: string 
           <Badge tone={statusTone(lead.status)}>{label(lead.status)}</Badge>
         </div>
       </Card>
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid min-w-0 gap-4 lg:grid-cols-3">
         <Card><h3 className="mb-3 font-black">Overview</h3><InfoRows rows={[['Created BD', lead.createdByBd?.name], ['Assigned BD', lead.assignedBd?.name], ['Approved By', lead.approvedByAdmin?.name], ['Current Stage', label(lead.currentStage)], ['Nature', label(lead.nature)]]} /></Card>
         <Card><h3 className="mb-3 font-black">Proof / Notes</h3><InfoRows rows={[['Proof Type', label(lead.proofType)], ['Proof URL', lead.proofUrl], ['Proof Notes', lead.proofNotes], ['Admin Notes', lead.adminNotes], ['Dismissal Reason', lead.dismissalReason]]} /></Card>
         <Card><h3 className="mb-3 font-black">Job</h3><InfoRows rows={[['Job ID', lead.job?.jobId], ['Company', lead.job?.companyName], ['Platform', lead.job?.platform], ['Status', label(lead.job?.status)]]} /></Card>
@@ -576,10 +576,10 @@ function CallsTable({ calls, role, reload }: { calls: LeadCall[]; role: 'admin' 
 function FeedbackModal({ call, onClose }: { call: LeadCall; onClose: () => void }) {
   const feedback = call.feedback ?? [];
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 p-4">
-      <section className="max-h-[86vh] w-full max-w-3xl overflow-auto rounded-lg bg-white shadow-2xl">
-        <header className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
-          <div>
+    <div className="fixed inset-0 z-50 grid place-items-center overflow-x-hidden bg-slate-950/60 p-3 sm:p-4">
+      <section className="max-h-[86vh] w-full max-w-3xl min-w-0 overflow-auto rounded-lg bg-white shadow-2xl">
+        <header className="flex items-start justify-between gap-4 border-b border-slate-200 px-4 py-4 sm:px-5">
+          <div className="min-w-0">
             <h2 className="text-lg font-black tracking-tight">Closer Feedback</h2>
             <p className="mt-1 text-sm font-semibold text-slate-500">
               Call #{call.callNumber} · {label(call.callStage)} · {call.closer?.name ?? 'Closer'}
@@ -589,7 +589,7 @@ function FeedbackModal({ call, onClose }: { call: LeadCall; onClose: () => void 
             <X size={16} />
           </Button>
         </header>
-        <div className="grid gap-4 p-5">
+        <div className="grid min-w-0 gap-4 p-4 sm:p-5">
           {feedback.length ? feedback.map((item) => <FeedbackLine key={item.id} feedback={item} />) : (
             <div className="rounded-md bg-slate-50 p-4 text-sm font-semibold text-slate-500">
               No closer feedback submitted yet.
@@ -620,7 +620,7 @@ function FeedbackLine({ feedback }: { feedback: CallFeedback }) {
 function ManualInviteAction({ call, reload }: { call: LeadCall; reload: () => Promise<void> }) {
   const [manualInviteStatus, setManualInviteStatus] = useState<ManualInviteStatus>(call.manualInviteStatus);
   return (
-    <div className="grid min-w-48 gap-2">
+    <div className="grid min-w-0 max-w-xs gap-2 sm:min-w-48">
       <select className={inputClass} value={manualInviteStatus} onChange={(e) => setManualInviteStatus(e.target.value as ManualInviteStatus)}>{manualStatuses.map((value) => <option key={value} value={value}>{label(value)}</option>)}</select>
       <Button onClick={async () => { await api(`/bd/leads/${call.leadId}/manual-calendar`, { method: 'PATCH', body: JSON.stringify({ leadCallId: call.id, manualInviteStatus }) }); await reload(); }}>Update</Button>
     </div>
@@ -633,7 +633,7 @@ export function CallsPage({ role }: { role: Role }) {
   const calls = data ?? [];
   const callPagination = usePagination(calls);
   return (
-    <div className="grid gap-5">
+    <div className="grid min-w-0 gap-5">
       {error ? <Card className="text-sm font-semibold text-red-700">{error}</Card> : null}
       <Card className="p-0">
         <div className="table-wrap">
@@ -670,7 +670,7 @@ export function CloserCallDetailPage({ id }: { id: string }) {
   if (error) return <Card className="text-sm font-semibold text-red-700">{error}</Card>;
   if (!call) return <Card>Loading call...</Card>;
   return (
-    <div className="grid gap-5">
+    <div className="grid min-w-0 gap-5">
       <Card>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -688,7 +688,7 @@ export function CloserCallDetailPage({ id }: { id: string }) {
           </div>
         </div>
       </Card>
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid min-w-0 gap-4 lg:grid-cols-2">
         <Card><h3 className="mb-3 font-black">Lead</h3><InfoRows rows={[['Profile', call.lead?.profileName], ['Tech Stack', call.lead?.techStack?.name], ['Payrate', call.lead?.payrate], ['BD', call.lead?.assignedBd?.name]]} /></Card>
         <Card><h3 className="mb-3 font-black">Invite</h3><InfoRows rows={[['Manual Status', label(call.manualInviteStatus)], ['Invite Link', call.manualInviteLink], ['BD Notes', call.bdNotes]]} /></Card>
       </div>
@@ -713,7 +713,7 @@ function CallFeedbackForm({ callId, onSaved }: { callId: string; onSaved: () => 
     await onSaved();
   };
   return (
-    <form onSubmit={submit} className="grid gap-3 md:grid-cols-3">
+    <form onSubmit={submit} className="grid min-w-0 gap-3 md:grid-cols-3">
       <Field label="Call Status"><select className={inputClass} value={form.callStatus} onChange={(e) => setForm({ ...form, callStatus: e.target.value as FeedbackCallStatus })}>{['TAKEN','RESCHEDULED','NO_SHOW','SHIFTED'].map((value) => <option key={value} value={value}>{label(value)}</option>)}</select></Field>
       <Field label="Result"><select className={inputClass} value={form.result} onChange={(e) => setForm({ ...form, result: e.target.value as FeedbackResult })}>{['PASSED','FAILED','NEED_NEXT_CALL','OFFERED','REJECTED','NO_DECISION'].map((value) => <option key={value} value={value}>{label(value)}</option>)}</select></Field>
       <Field label="Payrate Discussed"><input className={inputClass} value={form.payrateDiscussed} onChange={(e) => setForm({ ...form, payrateDiscussed: e.target.value })} required /></Field>
@@ -738,9 +738,9 @@ export function TechStacksPage() {
   };
 
   return (
-    <div className="grid gap-5">
+    <div className="grid min-w-0 gap-5">
       <Card>
-        <form onSubmit={submit} className="grid gap-3 md:grid-cols-[1fr_2fr_auto]">
+        <form onSubmit={submit} className="grid min-w-0 gap-3 md:grid-cols-[1fr_2fr_auto]">
           <Field label="Stack Name"><input className={inputClass} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></Field>
           <Field label="Description"><input className={inputClass} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field>
           <div className="flex items-end"><Button type="submit"><Plus size={16} /> Add Stack</Button></div>
@@ -757,10 +757,10 @@ export function TechStacksPage() {
                   <td className="font-bold">{stack.name}</td>
                   <td>{stack.description ?? '-'}</td>
                   <td><Badge tone={stack.isActive ? 'green' : 'red'}>{stack.isActive ? 'Active' : 'Inactive'}</Badge></td>
-                  <td className="flex gap-2">
+                  <td><div className="flex flex-wrap gap-2">
                     <Button variant="light" onClick={async () => { await api(`/tech-stacks/${stack.id}`, { method: 'PATCH', body: JSON.stringify({ isActive: !stack.isActive }) }); await reload(); }}>{stack.isActive ? 'Deactivate' : 'Activate'}</Button>
                     <Button variant="danger" onClick={async () => { await api(`/tech-stacks/${stack.id}`, { method: 'DELETE' }); await reload(); }}><Trash2 size={14} /> Delete</Button>
-                  </td>
+                  </div></td>
                 </tr>
               ))}
             </tbody>

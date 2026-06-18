@@ -6,6 +6,12 @@
   color-scheme: light;
 }
 
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -25,11 +31,15 @@ textarea {
 
 .table-wrap {
   max-height: min(62vh, 680px);
+  max-width: 100%;
+  width: 100%;
   overflow: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .lead-table {
   width: 100%;
+  min-width: 760px;
   border-collapse: collapse;
 }
 
@@ -40,6 +50,16 @@ textarea {
   text-align: left;
   vertical-align: middle;
   font-size: 13px;
+  white-space: nowrap;
+}
+
+.lead-table td {
+  max-width: 280px;
+}
+
+.lead-table td:first-child,
+.lead-table td[data-wrap='true'] {
+  white-space: normal;
 }
 
 .lead-table th {
@@ -51,4 +71,20 @@ textarea {
   font-size: 11px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+@media (max-width: 640px) {
+  .table-wrap {
+    max-height: none;
+  }
+
+  .lead-table {
+    min-width: 680px;
+  }
+
+  .lead-table th,
+  .lead-table td {
+    padding: 10px;
+    font-size: 12px;
+  }
 }

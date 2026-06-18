@@ -49,7 +49,12 @@ export class AuthService {
       }
       const valid = await argon2.verify(user.refreshTokenHash, refreshToken);
       if (!valid) throw new UnauthorizedException('Invalid refresh token');
-      return this.signTokens({ sub: user.id, email: user.email, role: user.role });
+      const tokens = await this.signTokens({ sub: user.id, email: user.email, role: user.role });
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { refreshTokenHash: await argon2.hash(tokens.refreshToken) },
+      });
+      return tokens;
     } catch {
       throw new UnauthorizedException('Invalid refresh token');
     }
