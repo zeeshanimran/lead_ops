@@ -1,0 +1,208 @@
+generator client {
+  provider        = "prisma-client-js"
+  engineType      = "client"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  BD
+  CLOSER
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum JobStatus {
+  NOT_APPLIED
+  APPLIED
+}
+
+enum LeadNature {
+  W2
+  CONTRACT
+  C2C
+}
+
+enum ProofType {
+  EMAIL_LINK
+  SCREENSHOT
+  MANUAL_VERIFICATION
+}
+
+enum LeadStatus {
+  PENDING_APPROVAL
+  APPROVED
+  DISMISSED
+  SCHEDULED
+  ACTIVE
+  CLOSED
+}
+
+enum ManualInviteStatus {
+  MANUAL_INVITE_PENDING
+  MANUAL_INVITE_CREATED
+  ACCEPTED
+  DECLINED
+  REMINDER_DUE
+  RED_ALERT
+}
+
+enum CallStatus {
+  TAKEN
+  RESCHEDULED
+  NO_SHOW
+  SHIFTED
+}
+
+enum CallStage {
+  SCREENING
+  FIRST
+  SECOND
+  THIRD
+  FOURTH
+  FIFTH
+  FINAL
+  OFFERED
+}
+
+enum CallNature {
+  PHONE_SCREENING
+  FIRST_INTERVIEW
+  TECHNICAL_ROUND
+  PANEL_INTERVIEW
+  CULTURE_FIT
+  FINAL_PANEL
+  OFFER_CALL
+}
+
+model User {
+  id                   String      @id @default(cuid())
+  name                 String
+  email                String      @unique
+  passwordHash         String
+  role                 Role
+  status               UserStatus  @default(ACTIVE)
+  refreshTokenHash     String?
+  invitationTokenHash  String?     @unique
+  invitationSentAt     DateTime?
+  invitationExpiresAt  DateTime?
+  invitationAcceptedAt DateTime?
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+  deletedAt            DateTime?
+
+  bdJobs               Job[]       @relation("BdJobs")
+  bdLeads              Lead[]      @relation("BdLeads")
+  assignedLeads        Lead[]      @relation("CloserLeads")
+  feedback             Feedback[]  @relation("CloserFeedback")
+  secondaryFeedback    Feedback[]  @relation("SecondaryCloserFeedback")
+  auditLogs            AuditLog[]
+}
+
+model Job {
+  id             String    @id @default(cuid())
+  jobId          String    @unique
+  dateAdded      DateTime  @default(now())
+  platform       String
+  companyName    String
+  techStack      String
+  jobLink        String
+  jobDescription String
+  status         JobStatus @default(NOT_APPLIED)
+  appliedAt      DateTime?
+  bdUserId       String
+  bd             User      @relation("BdJobs", fields: [bdUserId], references: [id])
+  leads          Lead[]
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([bdUserId])
+  @@index([dateAdded])
+}
+
+model TechStack {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Lead {
+  id                  String              @id @default(cuid())
+  companyName         String
+  profileName         String
+  resumeUrl           String?
+  nature              LeadNature
+  techStack           String
+  payrate             String
+  proofType           ProofType
+  proofNotes          String?
+  proofUrl            String?
+  approvalNotes       String?
+  dismissalReason     String?
+  status              LeadStatus          @default(PENDING_APPROVAL)
+  manualInviteStatus  ManualInviteStatus  @default(MANUAL_INVITE_PENDING)
+  manualInviteLink    String?
+  inviteNotes         String?
+  scheduledDate       DateTime?
+  scheduledTime       String?
+  bdUserId            String
+  jobId               String?
+  closerId            String?
+  bd                  User                @relation("BdLeads", fields: [bdUserId], references: [id])
+  job                 Job?                @relation(fields: [jobId], references: [id])
+  closer              User?               @relation("CloserLeads", fields: [closerId], references: [id])
+  feedback            Feedback[]
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  @@index([bdUserId])
+  @@index([closerId])
+  @@index([status])
+}
+
+model Feedback {
+  id                String      @id @default(cuid())
+  leadId            String
+  closerId          String
+  secondaryCloserId String?
+  callStatus        CallStatus
+  callStage         CallStage
+  nature            CallNature
+  payrateDiscussed  String
+  importantNotes    String
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  lead              Lead        @relation(fields: [leadId], references: [id])
+  closer            User        @relation("CloserFeedback", fields: [closerId], references: [id])
+  secondaryCloser   User?       @relation("SecondaryCloserFeedback", fields: [secondaryCloserId], references: [id])
+
+  @@index([leadId])
+  @@index([closerId])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  actorId     String?
+  action      String
+  entityType  String
+  entityId    String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  actor       User?    @relation(fields: [actorId], references: [id])
+
+  @@index([actorId])
+  @@index([entityType])
+  @@index([createdAt])
+}
