@@ -11,4 +11,9 @@ export class ApprovalDto {
   @IsOptional()
   @IsString()
   reason?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  assignedBdId?: string;
 }

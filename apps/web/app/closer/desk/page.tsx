@@ -1,5 +1,5 @@
-import { LeadsPage } from '@/components/crm-pages';
+import { CallsPage } from '@/components/crm-pages';
 
 export default function Page() {
-  return <LeadsPage status="SCHEDULED" />;
+  return <CallsPage role="CLOSER" />;
 }

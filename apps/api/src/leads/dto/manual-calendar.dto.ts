@@ -3,6 +3,10 @@ import { ManualInviteStatus } from '@prisma/client';
 import { IsEnum, IsOptional, IsString, IsUrl } from 'class-validator';
 
 export class ManualCalendarDto {
+  @ApiProperty()
+  @IsString()
+  leadCallId!: string;
+
   @ApiProperty({ enum: ManualInviteStatus })
   @IsEnum(ManualInviteStatus)
   manualInviteStatus!: ManualInviteStatus;
@@ -15,5 +19,5 @@ export class ManualCalendarDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  inviteNotes?: string;
+  bdNotes?: string;
 }

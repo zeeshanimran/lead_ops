@@ -1,28 +1,20 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { CallNature, CallStage, CallStatus } from '@prisma/client';
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { FeedbackCallStatus, FeedbackResult } from '@prisma/client';
+import { IsBoolean, IsEnum, IsOptional, IsString } from 'class-validator';
 
 export class CreateFeedbackDto {
-  @ApiProperty()
-  @IsString()
-  leadId!: string;
-
-  @ApiProperty({ enum: CallStatus })
-  @IsEnum(CallStatus)
-  callStatus!: CallStatus;
-
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  secondaryCloserId?: string;
+  leadCallId?: string;
 
-  @ApiProperty({ enum: CallStage })
-  @IsEnum(CallStage)
-  callStage!: CallStage;
+  @ApiProperty({ enum: FeedbackCallStatus })
+  @IsEnum(FeedbackCallStatus)
+  callStatus!: FeedbackCallStatus;
 
-  @ApiProperty({ enum: CallNature })
-  @IsEnum(CallNature)
-  nature!: CallNature;
+  @ApiProperty({ enum: FeedbackResult })
+  @IsEnum(FeedbackResult)
+  result!: FeedbackResult;
 
   @ApiProperty()
   @IsString()
@@ -30,5 +22,14 @@ export class CreateFeedbackDto {
 
   @ApiProperty()
   @IsString()
-  importantNotes!: string;
+  comments!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  nextAction?: string;
+
+  @ApiProperty()
+  @IsBoolean()
+  nextCallRequired!: boolean;
 }

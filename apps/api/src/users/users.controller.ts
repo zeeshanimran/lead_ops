@@ -45,6 +45,12 @@ export class UsersController {
     return this.users.create(actor.sub, dto);
   }
 
+  @Post(':id/resend-invite')
+  @Roles(Role.SUPER_ADMIN)
+  resendInvite(@CurrentUser() actor: AuthenticatedUser, @Param('id') id: string) {
+    return this.users.resendInvite(actor.sub, id);
+  }
+
   @Patch(':id')
   @Roles(Role.SUPER_ADMIN)
   update(@CurrentUser() actor: AuthenticatedUser, @Param('id') id: string, @Body() dto: UpdateUserDto) {

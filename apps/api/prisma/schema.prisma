@@ -40,10 +40,23 @@ enum ProofType {
 enum LeadStatus {
   PENDING_APPROVAL
   APPROVED
-  DISMISSED
-  SCHEDULED
-  ACTIVE
+  READY_TO_SCHEDULE
+  CALL_SCHEDULED
+  IN_PROGRESS
+  NEXT_CALL_REQUIRED
+  OFFERED
+  REJECTED
   CLOSED
+  DISMISSED
+}
+
+enum LeadCallStatus {
+  SCHEDULED
+  COMPLETED
+  PENDING_FEEDBACK
+  NO_SHOW
+  RESCHEDULED
+  CANCELLED
 }
 
 enum ManualInviteStatus {
@@ -52,14 +65,22 @@ enum ManualInviteStatus {
   ACCEPTED
   DECLINED
   REMINDER_DUE
-  RED_ALERT
 }
 
-enum CallStatus {
+enum FeedbackCallStatus {
   TAKEN
   RESCHEDULED
   NO_SHOW
   SHIFTED
+}
+
+enum FeedbackResult {
+  PASSED
+  FAILED
+  NEED_NEXT_CALL
+  OFFERED
+  REJECTED
+  NO_DECISION
 }
 
 enum CallStage {
@@ -100,10 +121,13 @@ model User {
   deletedAt            DateTime?
 
   bdJobs               Job[]       @relation("BdJobs")
-  bdLeads              Lead[]      @relation("BdLeads")
-  assignedLeads        Lead[]      @relation("CloserLeads")
-  feedback             Feedback[]  @relation("CloserFeedback")
-  secondaryFeedback    Feedback[]  @relation("SecondaryCloserFeedback")
+  createdLeads         Lead[]      @relation("CreatedBdLeads")
+  assignedLeads        Lead[]      @relation("AssignedBdLeads")
+  approvedLeads        Lead[]      @relation("ApprovedAdminLeads")
+  scheduledCalls       LeadCall[]  @relation("ScheduledBdCalls")
+  assignedCalls        LeadCall[]  @relation("CloserLeadCalls")
+  callFeedback         CallFeedback[]
+  leadTimeline         LeadTimeline[]
   auditLogs            AuditLog[]
 }
 
@@ -135,61 +159,108 @@ model TechStack {
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  leads       Lead[]
 }
 
 model Lead {
-  id                  String              @id @default(cuid())
-  companyName         String
-  profileName         String
-  resumeUrl           String?
-  nature              LeadNature
-  techStack           String
-  payrate             String
-  proofType           ProofType
-  proofNotes          String?
-  proofUrl            String?
-  approvalNotes       String?
-  dismissalReason     String?
-  status              LeadStatus          @default(PENDING_APPROVAL)
-  manualInviteStatus  ManualInviteStatus  @default(MANUAL_INVITE_PENDING)
-  manualInviteLink    String?
-  inviteNotes         String?
-  scheduledDate       DateTime?
-  scheduledTime       String?
-  bdUserId            String
-  jobId               String?
-  closerId            String?
-  bd                  User                @relation("BdLeads", fields: [bdUserId], references: [id])
-  job                 Job?                @relation(fields: [jobId], references: [id])
-  closer              User?               @relation("CloserLeads", fields: [closerId], references: [id])
-  feedback            Feedback[]
-  createdAt           DateTime            @default(now())
-  updatedAt           DateTime            @updatedAt
+  id                String      @id @default(cuid())
+  companyName       String
+  profileName       String
+  resumeUrl         String?
+  nature            LeadNature
+  techStackId       String
+  payrate           String
+  proofType         ProofType
+  proofNotes        String?
+  proofUrl          String?
+  jobId             String?
+  createdByBdId     String
+  assignedBdId      String?
+  approvedByAdminId String?
+  status            LeadStatus  @default(PENDING_APPROVAL)
+  currentStage      CallStage?
+  adminNotes        String?
+  dismissalReason   String?
+  approvedAt        DateTime?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
 
-  @@index([bdUserId])
+  createdByBd       User        @relation("CreatedBdLeads", fields: [createdByBdId], references: [id])
+  assignedBd        User?       @relation("AssignedBdLeads", fields: [assignedBdId], references: [id])
+  approvedByAdmin   User?       @relation("ApprovedAdminLeads", fields: [approvedByAdminId], references: [id])
+  job               Job?        @relation(fields: [jobId], references: [id])
+  techStack         TechStack   @relation(fields: [techStackId], references: [id])
+  calls             LeadCall[]
+  timeline          LeadTimeline[]
+
+  @@index([createdByBdId])
+  @@index([assignedBdId])
+  @@index([status])
+}
+
+model LeadCall {
+  id                 String             @id @default(cuid())
+  leadId             String
+  callNumber         Int
+  callStage          CallStage
+  scheduledByBdId    String
+  closerId           String
+  scheduledAt        DateTime
+  status             LeadCallStatus     @default(SCHEDULED)
+  manualInviteStatus ManualInviteStatus @default(MANUAL_INVITE_PENDING)
+  manualInviteLink   String?
+  bdNotes            String?
+  closerNotes        String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  lead               Lead               @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  scheduledByBd      User               @relation("ScheduledBdCalls", fields: [scheduledByBdId], references: [id])
+  closer             User               @relation("CloserLeadCalls", fields: [closerId], references: [id])
+  feedback           CallFeedback[]
+
+  @@unique([leadId, callNumber])
+  @@index([leadId])
+  @@index([scheduledByBdId])
   @@index([closerId])
   @@index([status])
 }
 
-model Feedback {
-  id                String      @id @default(cuid())
-  leadId            String
-  closerId          String
-  secondaryCloserId String?
-  callStatus        CallStatus
-  callStage         CallStage
-  nature            CallNature
-  payrateDiscussed  String
-  importantNotes    String
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
+model CallFeedback {
+  id               String             @id @default(cuid())
+  leadCallId       String
+  closerId         String
+  callStatus       FeedbackCallStatus
+  result           FeedbackResult
+  comments         String
+  payrateDiscussed String
+  nextAction       String?
+  nextCallRequired Boolean            @default(false)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
 
-  lead              Lead        @relation(fields: [leadId], references: [id])
-  closer            User        @relation("CloserFeedback", fields: [closerId], references: [id])
-  secondaryCloser   User?       @relation("SecondaryCloserFeedback", fields: [secondaryCloserId], references: [id])
+  leadCall         LeadCall           @relation(fields: [leadCallId], references: [id], onDelete: Cascade)
+  closer           User               @relation(fields: [closerId], references: [id])
+
+  @@index([leadCallId])
+  @@index([closerId])
+}
+
+model LeadTimeline {
+  id          String   @id @default(cuid())
+  leadId      String
+  actorId     String?
+  action      String
+  description String
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  lead        Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  actor       User?    @relation(fields: [actorId], references: [id])
 
   @@index([leadId])
-  @@index([closerId])
+  @@index([actorId])
+  @@index([createdAt])
 }
 
 model AuditLog {

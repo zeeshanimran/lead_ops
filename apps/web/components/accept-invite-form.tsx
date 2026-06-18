@@ -28,6 +28,7 @@ export function AcceptInviteForm({ token }: { token: string }) {
       const session = await api<Session>('/auth/accept-invite', {
         method: 'POST',
         body: JSON.stringify({ token, password }),
+        successMessage: 'Account activated successfully.',
       });
       setSession(session);
       router.replace(roleHome(session.user.role));

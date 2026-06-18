@@ -21,3 +21,17 @@ export class ReportsController {
     return this.reports.dashboard(user);
   }
 }
+
+@ApiBearerAuth()
+@ApiTags('admin-reports')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Controller('admin/reports')
+export class AdminReportsController {
+  constructor(private readonly reports: ReportsService) {}
+
+  @Get()
+  @Roles(Role.SUPER_ADMIN)
+  dashboard(@CurrentUser() user: AuthenticatedUser) {
+    return this.reports.dashboard(user);
+  }
+}

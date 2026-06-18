@@ -13,7 +13,7 @@ export class CreateLeadDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsUrl({ require_protocol: true })
+  @IsUrl({ require_protocol: true, require_tld: false })
   resumeUrl?: string;
 
   @ApiProperty({ enum: LeadNature })
@@ -22,7 +22,7 @@ export class CreateLeadDto {
 
   @ApiProperty()
   @IsString()
-  techStack!: string;
+  techStackId!: string;
 
   @ApiProperty()
   @IsString()
@@ -39,7 +39,7 @@ export class CreateLeadDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsUrl({ require_protocol: true })
+  @IsUrl({ require_protocol: true, require_tld: false })
   proofUrl?: string;
 
   @ApiPropertyOptional()

@@ -15,7 +15,11 @@ export default function LoginPage() {
   async function submit(event: FormEvent) {
     event.preventDefault();
     try {
-      const session = await api<Session>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+      const session = await api<Session>('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email, password }),
+        successMessage: 'Logged in successfully.',
+      });
       setSession(session);
       router.replace(roleHome(session.user.role));
     } catch (err) {

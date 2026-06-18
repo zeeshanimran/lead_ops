@@ -58,6 +58,15 @@ export class UsersService {
   }
 
   async create(actorId: string, dto: CreateUserDto) {
+    const email = dto.email.trim().toLowerCase();
+    const existing = await this.prisma.user.findUnique({ where: { email } });
+    if (existing?.deletedAt && existing.role !== Role.SUPER_ADMIN) {
+      return this.reinviteDeletedUser(actorId, existing.id, { ...dto, email });
+    }
+    if (existing) {
+      throw new BadRequestException('Email is already in use');
+    }
+
     const inviteToken = randomBytes(32).toString('base64url');
     const invitationTokenHash = createHash('sha256').update(inviteToken).digest('hex');
     const now = new Date();
@@ -65,7 +74,7 @@ export class UsersService {
     const user = await this.prisma.user.create({
       data: {
         name: dto.name,
-        email: dto.email,
+        email,
         role: dto.role,
         status: UserStatus.INACTIVE,
         passwordHash: await argon2.hash(randomBytes(32).toString('base64url')),
@@ -75,9 +84,69 @@ export class UsersService {
       },
       select: publicUser,
     });
-    await this.email.sendInvite(user.email, user.name, user.role, inviteToken);
+    const sent = await this.email.sendInvite(user.email, user.name, user.role, inviteToken);
     await this.auditLogs.write(actorId, 'USER_CREATED', 'User', user.id, { role: user.role });
-    return user;
+    return this.withInviteFallback(user, inviteToken, sent);
+  }
+
+  private async reinviteDeletedUser(actorId: string, id: string, dto: CreateUserDto) {
+    const inviteToken = randomBytes(32).toString('base64url');
+    const invitationTokenHash = createHash('sha256').update(inviteToken).digest('hex');
+    const now = new Date();
+    const invitationExpiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const user = await this.prisma.user.update({
+      where: { id },
+      data: {
+        name: dto.name,
+        email: dto.email,
+        role: dto.role,
+        status: UserStatus.INACTIVE,
+        deletedAt: null,
+        refreshTokenHash: null,
+        passwordHash: await argon2.hash(randomBytes(32).toString('base64url')),
+        invitationTokenHash,
+        invitationSentAt: now,
+        invitationExpiresAt,
+        invitationAcceptedAt: null,
+      },
+      select: publicUser,
+    });
+    const sent = await this.email.sendInvite(user.email, user.name, user.role, inviteToken);
+    await this.auditLogs.write(actorId, 'USER_REINVITED', 'User', user.id, { role: user.role });
+    return this.withInviteFallback(user, inviteToken, sent);
+  }
+
+  async resendInvite(actorId: string, id: string) {
+    const existing = await this.prisma.user.findFirst({ where: { id, deletedAt: null } });
+    if (!existing) throw new NotFoundException('User not found');
+    if (existing.role === Role.SUPER_ADMIN) throw new BadRequestException('Super Admin does not use invites');
+    if (existing.status === UserStatus.ACTIVE && existing.invitationAcceptedAt) {
+      throw new BadRequestException('User has already accepted the invite');
+    }
+
+    const inviteToken = randomBytes(32).toString('base64url');
+    const invitationTokenHash = createHash('sha256').update(inviteToken).digest('hex');
+    const now = new Date();
+    const invitationExpiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const user = await this.prisma.user.update({
+      where: { id },
+      data: {
+        status: UserStatus.INACTIVE,
+        invitationTokenHash,
+        invitationSentAt: now,
+        invitationExpiresAt,
+        invitationAcceptedAt: null,
+        refreshTokenHash: null,
+      },
+      select: publicUser,
+    });
+    const sent = await this.email.sendInvite(user.email, user.name, user.role, inviteToken);
+    await this.auditLogs.write(actorId, 'USER_INVITE_RESENT', 'User', user.id, { role: user.role });
+    return this.withInviteFallback(user, inviteToken, sent);
+  }
+
+  private withInviteFallback<T extends object>(user: T, token: string, sent: boolean) {
+    return { ...user, emailSent: sent, invitationUrl: this.email.inviteLink(token) };
   }
 
   async update(actorId: string, id: string, dto: UpdateUserDto) {

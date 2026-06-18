@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -26,5 +26,19 @@ export class FeedbackController {
   @Roles(Role.CLOSER)
   create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateFeedbackDto) {
     return this.feedback.create(user, dto);
+  }
+}
+
+@ApiBearerAuth()
+@ApiTags('closer-feedback')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Controller('closer/calls')
+export class CloserFeedbackController {
+  constructor(private readonly feedback: FeedbackService) {}
+
+  @Post(':callId/feedback')
+  @Roles(Role.CLOSER)
+  create(@CurrentUser() user: AuthenticatedUser, @Param('callId') callId: string, @Body() dto: CreateFeedbackDto) {
+    return this.feedback.create(user, { ...dto, leadCallId: callId });
   }
 }

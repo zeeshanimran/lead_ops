@@ -1,6 +1,6 @@
 import { config } from 'dotenv';
 import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient, Role } from '@prisma/client';
+import { PrismaClient, Role, UserStatus } from '@prisma/client';
 import * as argon2 from 'argon2';
 
 config({ override: true });
@@ -20,32 +20,37 @@ async function main() {
 
   const passwordHash = await argon2.hash(password);
 
-  const existingAdmin = await prisma.user.findFirst({
-    where: { role: Role.SUPER_ADMIN },
-  });
+  await prisma.$transaction([
+    prisma.callFeedback.deleteMany(),
+    prisma.leadTimeline.deleteMany(),
+    prisma.leadCall.deleteMany(),
+    prisma.auditLog.deleteMany(),
+    prisma.lead.deleteMany(),
+    prisma.job.deleteMany(),
+    prisma.techStack.deleteMany(),
+    prisma.user.deleteMany({ where: { email: { not: email } } }),
+  ]);
 
-  if (existingAdmin) {
-    await prisma.user.update({
-      where: { id: existingAdmin.id },
-      data: {
-        email,
-        name,
-        passwordHash,
-        status: 'ACTIVE',
-        deletedAt: null,
-        refreshTokenHash: null,
-      },
-    });
-    return;
-  }
-
-  await prisma.user.create({
-    data: {
+  await prisma.user.upsert({
+    where: { email },
+    create: {
       name,
       email,
       passwordHash,
       role: Role.SUPER_ADMIN,
-      status: 'ACTIVE',
+      status: UserStatus.ACTIVE,
+    },
+    update: {
+      name,
+      passwordHash,
+      role: Role.SUPER_ADMIN,
+      status: UserStatus.ACTIVE,
+      deletedAt: null,
+      refreshTokenHash: null,
+      invitationTokenHash: null,
+      invitationSentAt: null,
+      invitationExpiresAt: null,
+      invitationAcceptedAt: null,
     },
   });
 }

@@ -45,7 +45,7 @@ const nav = {
   CLOSER: [
     ['/closer/dashboard', 'Dashboard', LayoutDashboard],
     ['/closer/desk', 'Closer Desk', ShieldCheck],
-    ['/closer/assigned-leads', 'Assigned Leads', FileCheck2],
+    ['/closer/assigned-leads', 'Assigned Calls', FileCheck2],
     ['/closer/feedback', 'Feedback', MessageSquareText],
   ],
 } as const;

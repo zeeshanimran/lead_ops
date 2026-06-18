@@ -15,7 +15,7 @@ export class CreateJobDto {
   techStack!: string;
 
   @ApiProperty()
-  @IsUrl({ require_protocol: true })
+  @IsUrl({ require_protocol: true, require_tld: false })
   jobLink!: string;
 
   @ApiProperty()
