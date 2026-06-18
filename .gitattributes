@@ -1,0 +1,5 @@
+# Keep generated build artifacts out of GitHub language statistics.
+apps/web/.next/** linguist-generated=true
+apps/**/dist/** linguist-generated=true
+dist/** linguist-generated=true
+coverage/** linguist-generated=true
