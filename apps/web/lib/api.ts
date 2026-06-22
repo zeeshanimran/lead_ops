@@ -1,8 +1,15 @@
 import { emitToast } from '@/components/toaster';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api';
 let isRedirectingToLogin = false;
 let refreshPromise: Promise<Session | null> | null = null;
+
+declare global {
+  interface Window {
+    __LEADOPS_CONFIG__?: {
+      apiUrl?: string;
+    };
+  }
+}
 
 type ApiOptions = RequestInit & {
   successMessage?: string;
@@ -53,7 +60,7 @@ export async function api<T>(path: string, options: ApiOptions = {}): Promise<T>
 }
 
 async function sendApiRequest(path: string, requestOptions: RequestInit, accessToken?: string) {
-  return fetch(`${API_URL}${path}`, {
+  return fetch(`${apiUrl()}${path}`, {
     ...requestOptions,
     headers: {
       'Content-Type': 'application/json',
@@ -61,6 +68,12 @@ async function sendApiRequest(path: string, requestOptions: RequestInit, accessT
       ...requestOptions.headers,
     },
   });
+}
+
+function apiUrl() {
+  const value = typeof window !== 'undefined' ? window.__LEADOPS_CONFIG__?.apiUrl : process.env.NEXT_PUBLIC_API_URL;
+  if (!value) throw new Error('API URL is required');
+  return value.replace(/\/$/, '');
 }
 
 async function handleApiResponse<T>(response: Response, requestOptions: RequestInit, successMessage?: string, suppressToast?: boolean): Promise<T> {

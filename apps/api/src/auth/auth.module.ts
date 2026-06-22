@@ -5,6 +5,7 @@ import { PassportModule } from '@nestjs/passport';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './jwt.strategy';
+import { requireConfig, requireConfigNumber } from '../config/required-env';
 
 @Module({
   imports: [
@@ -13,8 +14,8 @@ import { JwtStrategy } from './jwt.strategy';
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        secret: config.get<string>('JWT_ACCESS_SECRET'),
-        signOptions: { expiresIn: Number(config.get<string>('JWT_ACCESS_EXPIRES_IN_SECONDS') ?? 900) },
+        secret: requireConfig(config, 'JWT_ACCESS_SECRET'),
+        signOptions: { expiresIn: requireConfigNumber(config, 'JWT_ACCESS_EXPIRES_IN_SECONDS') },
       }),
     }),
   ],

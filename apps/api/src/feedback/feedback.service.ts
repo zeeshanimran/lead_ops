@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { FeedbackCallStatus, FeedbackResult, LeadCallStatus, LeadStatus, Role } from '@prisma/client';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { AuthenticatedUser } from '../common/types/authenticated-user';
+import { EmailService } from '../email/email.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateFeedbackDto } from './dto/create-feedback.dto';
 
@@ -12,6 +13,7 @@ export class FeedbackService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogs: AuditLogsService,
+    private readonly email: EmailService,
   ) {}
 
   findAll(user: AuthenticatedUser) {
@@ -43,7 +45,7 @@ export class FeedbackService {
     const leadCallId = dto.leadCallId;
     const call = await this.prisma.leadCall.findUnique({
       where: { id: leadCallId },
-      include: { lead: true },
+      include: { lead: true, closer: { select: publicUser } },
     });
     if (!call) throw new NotFoundException('Call not found');
     if (call.closerId !== user.sub) throw new ForbiddenException('Call is not assigned to this closer');
@@ -96,8 +98,30 @@ export class FeedbackService {
       leadCallId,
       result: dto.result,
     });
+    await this.notifySuperAdmins(
+      `Feedback submitted for Call #${call.callNumber}`,
+      `${call.closer.name} submitted feedback for ${call.lead.companyName}. Result: ${label(dto.result)}.${dto.nextCallRequired ? ' Next call is required.' : ''}`,
+      call.leadId,
+    );
     return feedback;
   }
+
+  private async notifySuperAdmins(subject: string, message: string, leadId?: string) {
+    const superAdmins = await this.prisma.user.findMany({
+      where: { role: Role.SUPER_ADMIN, status: 'ACTIVE', deletedAt: null },
+      select: { email: true },
+    });
+    await this.email.sendNotification(
+      superAdmins.map((admin) => admin.email),
+      subject,
+      message,
+      leadId ? this.email.adminLeadLink(leadId) : undefined,
+    );
+  }
+}
+
+function label(value: string) {
+  return value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 function deriveCallStatus(callStatus: FeedbackCallStatus) {

@@ -125,11 +125,11 @@ export function DashboardPage({ role }: { role: Role }) {
   const { data, error } = useLoad<DashboardReport>('/reports/dashboard');
   const title = role === 'SUPER_ADMIN' ? 'Executive Dashboard' : role === 'BD' ? 'BD Dashboard' : 'Closer Dashboard';
   const cards = [
-    ['Users', data?.totals.users],
+    ['Active BDs', data?.totals.activeBds],
+    ['Active Closers', data?.totals.activeClosers],
     ['Jobs', data?.totals.jobs],
     ['Leads', data?.totals.leads],
     ['Calls', data?.totals.calls],
-    ['Feedback', data?.totals.feedback],
     ['Pending Feedback', data?.totals.pendingFeedbackCalls],
   ];
 
@@ -178,13 +178,11 @@ function SummaryCard({ title, rows }: { title: string; rows: Array<[string, numb
 export function UsersPage({ roleFilter }: { roleFilter?: Role }) {
   const { data, error, reload } = useLoad<User[]>(`/users${roleFilter ? `?role=${roleFilter}` : ''}`);
   const [form, setForm] = useState({ name: '', email: '', role: roleFilter ?? 'BD' });
-  const [inviteUrl, setInviteUrl] = useState('');
   const users = data ?? [];
   const userPagination = usePagination(users);
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    const user = await api<User & { invitationUrl?: string }>('/users', { method: 'POST', body: JSON.stringify(form) });
-    setInviteUrl(user.invitationUrl ?? '');
+    await api<User>('/users', { method: 'POST', body: JSON.stringify(form) });
     setForm({ name: '', email: '', role: roleFilter ?? 'BD' });
     await reload();
   };
@@ -206,13 +204,6 @@ export function UsersPage({ roleFilter }: { roleFilter?: Role }) {
           <div className="flex items-end"><Button className="w-full" type="submit"><Plus size={16} /> Send Invite</Button></div>
         </form>
       </Card>
-      {inviteUrl ? (
-        <Card className="border-amber-200 bg-amber-50 text-sm">
-          <p className="font-black text-amber-900">Invite link:</p>
-          <p className="mt-1 text-amber-900">Use this if the email does not arrive, or send it manually to the user.</p>
-          <a className="mt-2 block break-all font-bold text-red-700" href={inviteUrl} target="_blank">{inviteUrl}</a>
-        </Card>
-      ) : null}
       {error ? <Card className="text-sm font-semibold text-red-700">{error}</Card> : null}
       <Card className="p-0">
         <div className="table-wrap">
@@ -230,8 +221,7 @@ export function UsersPage({ roleFilter }: { roleFilter?: Role }) {
                       <>
                         {user.status === 'INACTIVE' ? (
                           <Button variant="light" onClick={async () => {
-                            const resent = await api<User & { invitationUrl?: string }>(`/users/${user.id}/resend-invite`, { method: 'POST' });
-                            setInviteUrl(resent.invitationUrl ?? '');
+                            await api<User>(`/users/${user.id}/resend-invite`, { method: 'POST' });
                             await reload();
                           }}>
                             Resend Invite

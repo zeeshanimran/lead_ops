@@ -124,14 +124,10 @@ export class LeadsService {
         jobId: dto.jobId,
       });
     }
-    const superAdmins = await this.prisma.user.findMany({
-      where: { role: Role.SUPER_ADMIN, status: 'ACTIVE', deletedAt: null },
-      select: { email: true },
-    });
-    await this.email.sendNotification(
-      superAdmins.map((admin) => admin.email),
+    await this.notifySuperAdmins(
       'New lead pending approval',
       `${lead.createdByBd.name} submitted a lead for ${lead.companyName}.`,
+      lead.id,
     );
     await this.auditLogs.write(user.sub, 'LEAD_CREATED', 'Lead', lead.id);
     return lead;
@@ -259,6 +255,11 @@ export class LeadsService {
     });
 
     await this.auditLogs.write(user.sub, 'CALL_SCHEDULED', 'LeadCall', result.id, { leadId: id, closerId: dto.closerId });
+    await this.notifySuperAdmins(
+      `Call #${result.callNumber} scheduled`,
+      `${result.scheduledByBd.name} scheduled ${labelStage(result.callStage)} for ${result.lead.companyName} with ${result.closer.name}.`,
+      result.leadId,
+    );
     await this.email.sendCallAssignment({
       closerEmail: closer.email,
       closerName: closer.name,
@@ -323,6 +324,11 @@ export class LeadsService {
     });
 
     await this.auditLogs.write(user.sub, 'CALL_ACCEPTED', 'LeadCall', id, { leadId: call.leadId });
+    await this.notifySuperAdmins(
+      `Call #${call.callNumber} accepted`,
+      `${call.closer.name} accepted ${labelStage(call.callStage)} for ${call.lead.companyName}.`,
+      call.leadId,
+    );
     await this.email.sendCallAccepted({
       bdEmail: call.scheduledByBd.email,
       bdName: call.scheduledByBd.name,
@@ -362,6 +368,11 @@ export class LeadsService {
       manualInviteStatus: dto.manualInviteStatus,
     });
     await this.auditLogs.write(user.sub, 'MANUAL_INVITE_UPDATED', 'LeadCall', dto.leadCallId, { leadId: id });
+    await this.notifySuperAdmins(
+      `Manual invite updated for Call #${updated.callNumber}`,
+      `${updated.scheduledByBd.name} marked the manual invite ${labelStatus(updated.manualInviteStatus)} for ${updated.lead.companyName}.`,
+      id,
+    );
     return updated;
   }
 
@@ -417,6 +428,19 @@ export class LeadsService {
         metadata: metadata ?? Prisma.JsonNull,
       },
     });
+  }
+
+  private async notifySuperAdmins(subject: string, message: string, leadId?: string) {
+    const superAdmins = await this.prisma.user.findMany({
+      where: { role: Role.SUPER_ADMIN, status: 'ACTIVE', deletedAt: null },
+      select: { email: true },
+    });
+    await this.email.sendNotification(
+      superAdmins.map((admin) => admin.email),
+      subject,
+      message,
+      leadId ? this.email.adminLeadLink(leadId) : undefined,
+    );
   }
 }
 

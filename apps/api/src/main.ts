@@ -4,13 +4,19 @@ import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import cookieParser = require('cookie-parser');
 import { AppModule } from './app.module';
+import { requireConfig, requireConfigNumber } from './config/required-env';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const config = app.get(ConfigService);
+  const express = app.getHttpAdapter().getInstance();
+
+  if (typeof express.disable === 'function') {
+    express.disable('x-powered-by');
+  }
 
   app.enableCors({
-    origin: config.get<string>('CORS_ORIGIN') ?? 'http://localhost:3000',
+    origin: requireConfig(config, 'CORS_ORIGIN'),
     credentials: true,
   });
   app.use(cookieParser());
@@ -23,15 +29,17 @@ async function bootstrap() {
     }),
   );
 
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('LeadOps CRM API')
-    .setDescription('Phase 1 CRM API for CodeBricks lead operations')
-    .setVersion('0.1.0')
-    .addBearerAuth()
-    .build();
-  SwaggerModule.setup('docs', app, SwaggerModule.createDocument(app, swaggerConfig));
+  if (config.get<string>('ENABLE_API_DOCS') === 'true') {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('LeadOps CRM API')
+      .setDescription('LeadOps CRM API')
+      .setVersion('0.1.0')
+      .addBearerAuth()
+      .build();
+    SwaggerModule.setup('docs', app, SwaggerModule.createDocument(app, swaggerConfig));
+  }
 
-  await app.listen(config.get<number>('PORT') ?? 4000);
+  await app.listen(requireConfigNumber(config, 'PORT'));
 }
 
 void bootstrap();

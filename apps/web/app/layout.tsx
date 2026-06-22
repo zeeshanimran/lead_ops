@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Script from 'next/script';
 import { Toaster } from '@/components/toaster';
 import './globals.css';
 
@@ -11,6 +12,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en">
       <body>
+        <Script src="/runtime-config.js" strategy="beforeInteractive" />
         {children}
         <Toaster />
       </body>

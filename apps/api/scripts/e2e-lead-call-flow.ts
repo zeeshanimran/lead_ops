@@ -17,13 +17,13 @@ import * as argon2 from 'argon2';
 
 config({ override: true });
 
-const API_URL = process.env.E2E_API_URL ?? 'http://localhost:4000/api';
-const WEB_URL = process.env.E2E_WEB_URL ?? 'http://localhost:3000';
-const password = process.env.E2E_PASSWORD ?? 'E2ePassword123!';
+const API_URL = requireEnv('E2E_API_URL');
+const WEB_URL = requireEnv('E2E_WEB_URL');
+const password = requireEnv('E2E_PASSWORD');
 const runId = process.env.E2E_RUN_ID ?? new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
 
 const prisma = new PrismaClient({
-  adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
+  adapter: new PrismaPg({ connectionString: requireEnv('DATABASE_URL') }),
 });
 
 type Session = {
@@ -32,6 +32,12 @@ type Session = {
 };
 
 const ids: Record<string, string> = {};
+
+function requireEnv(key: string) {
+  const value = process.env[key];
+  if (!value) throw new Error(`${key} is required`);
+  return value;
+}
 
 async function main() {
   const users = await ensureUsers();

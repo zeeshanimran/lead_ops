@@ -5,6 +5,7 @@ import { Role, UserStatus } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { requireConfig, requireConfigNumber } from '../config/required-env';
 import { AcceptInviteDto } from './dto/accept-invite.dto';
 import { LoginDto } from './dto/login.dto';
 
@@ -41,7 +42,7 @@ export class AuthService {
   async refresh(refreshToken: string) {
     try {
       const payload = await this.jwt.verifyAsync<TokenPayload>(refreshToken, {
-        secret: this.config.get<string>('JWT_REFRESH_SECRET') ?? 'dev-refresh-secret',
+        secret: requireConfig(this.config, 'JWT_REFRESH_SECRET'),
       });
       const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
       if (!user?.refreshTokenHash || user.status !== 'ACTIVE' || user.deletedAt) {
@@ -103,8 +104,8 @@ export class AuthService {
     const [accessToken, refreshToken] = await Promise.all([
       this.jwt.signAsync(payload),
       this.jwt.signAsync(payload, {
-        secret: this.config.get<string>('JWT_REFRESH_SECRET') ?? 'dev-refresh-secret',
-        expiresIn: Number(this.config.get<string>('JWT_REFRESH_EXPIRES_IN_SECONDS') ?? 604800),
+        secret: requireConfig(this.config, 'JWT_REFRESH_SECRET'),
+        expiresIn: requireConfigNumber(this.config, 'JWT_REFRESH_EXPIRES_IN_SECONDS'),
       }),
     ]);
     return { accessToken, refreshToken };

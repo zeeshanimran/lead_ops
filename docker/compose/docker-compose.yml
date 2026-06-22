@@ -4,11 +4,11 @@ services:
     container_name: leadops-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: leadops
-      POSTGRES_PASSWORD: leadops
-      POSTGRES_DB: leadops_crm
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
     ports:
-      - "5433:5432"
+      - "${POSTGRES_PORT:?POSTGRES_PORT is required}:5432"
     volumes:
       - leadops-postgres:/var/lib/postgresql/data
 
@@ -17,7 +17,7 @@ services:
     container_name: leadops-redis
     restart: unless-stopped
     ports:
-      - "6380:6379"
+      - "${REDIS_PORT:?REDIS_PORT is required}:6379"
     volumes:
       - leadops-redis:/data
 

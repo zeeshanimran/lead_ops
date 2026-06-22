@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { ConfigService } from '@nestjs/config';
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { ConnectionOptions, Job, Queue, Worker } from 'bullmq';
+import { requireConfig } from '../config/required-env';
 
 type EmailInput = {
   to: string | string[];
@@ -69,9 +70,9 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
     const region = this.config.get<string>('AWS_REGION') ?? this.config.get<string>('AWS_SES_REGION');
     const accessKeyId = this.config.get<string>('AWS_ACCESS_KEY_ID');
     const secretAccessKey = this.config.get<string>('AWS_SECRET_ACCESS_KEY');
-    this.fromEmail = this.config.get<string>('SES_FROM_EMAIL') ?? 'no-reply@codebricks.co';
-    this.appUrl = (this.config.get<string>('APP_URL') ?? 'http://localhost:3000').replace(/\/$/, '');
-    this.redisUrl = this.config.get<string>('REDIS_URL') ?? 'redis://127.0.0.1:6380';
+    this.fromEmail = requireConfig(this.config, 'SES_FROM_EMAIL');
+    this.appUrl = requireConfig(this.config, 'APP_URL').replace(/\/$/, '');
+    this.redisUrl = requireConfig(this.config, 'REDIS_URL');
 
     this.client =
       region && accessKeyId && secretAccessKey
@@ -119,6 +120,10 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
 
   bdLeadLink(leadId: string) {
     return `${this.appUrl}/bd/leads/${encodeURIComponent(leadId)}`;
+  }
+
+  adminLeadLink(leadId: string) {
+    return `${this.appUrl}/admin/leads/${encodeURIComponent(leadId)}`;
   }
 
   async sendInvite(to: string, name: string, role: string, token: string) {

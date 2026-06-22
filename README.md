@@ -20,7 +20,7 @@ Organization owner, workspace owner, CEO, manager, public signup, organization m
 
 ```bash
 cp apps/api/.env.example apps/api/.env
-docker compose up -d
+docker compose -f docker/compose/docker-compose.yml up -d
 npm install
 npm run db:generate
 npm run db:migrate
@@ -35,5 +35,3 @@ The seed creates only the Super Admin from `apps/api/.env`:
 - `SUPER_ADMIN_PASSWORD`
 
 BD and Closer users are created from the Super Admin UI.
-
-API docs are available at `http://localhost:4000/docs`.

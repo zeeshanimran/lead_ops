@@ -4,5 +4,7 @@ dist
 coverage
 .env
 .env.local
+.env.production
 *.log
 apps/api/generated
+PRODUCTION.MD

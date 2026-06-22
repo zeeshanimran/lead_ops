@@ -1,0 +1,192 @@
+name: Build and Deploy Production
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+jobs:
+  changes:
+    name: Detect changed services
+    runs-on: ubuntu-latest
+    outputs:
+      api: ${{ steps.detect.outputs.api }}
+      web: ${{ steps.detect.outputs.web }}
+      infra: ${{ steps.detect.outputs.infra }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect paths
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if git rev-parse "${{ github.event.before }}" >/dev/null 2>&1; then
+            changed_files="$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")"
+          else
+            changed_files="$(git ls-files)"
+          fi
+
+          echo "$changed_files"
+
+          api=false
+          web=false
+          infra=false
+
+          if echo "$changed_files" | grep -E '^(apps/api/|package\.json$|package-lock\.json$|docker/api/)' >/dev/null; then
+            api=true
+          fi
+
+          if echo "$changed_files" | grep -E '^(apps/web/|package\.json$|package-lock\.json$|docker/web/)' >/dev/null; then
+            web=true
+          fi
+
+          if echo "$changed_files" | grep -E '^(\.github/workflows/deploy-production\.yml|docker/compose/|\.env\.production\.example|PRODUCTION\.md|\.dockerignore)$' >/dev/null; then
+            infra=true
+          fi
+
+          if [ "$infra" = "true" ]; then
+            api=true
+            web=true
+          fi
+
+          echo "api=$api" >> "$GITHUB_OUTPUT"
+          echo "web=$web" >> "$GITHUB_OUTPUT"
+          echo "infra=$infra" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build and push changed images
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.api == 'true' || needs.changes.outputs.web == 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push API
+        if: needs.changes.outputs.api == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/api/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_NAMESPACE }}/leadops-api:latest
+            ${{ secrets.DOCKERHUB_NAMESPACE }}/leadops-api:${{ github.sha }}
+          cache-from: type=gha,scope=leadops-api
+          cache-to: type=gha,mode=max,scope=leadops-api
+
+      - name: Build and push Web
+        if: needs.changes.outputs.web == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/web/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_NAMESPACE }}/leadops-web:latest
+            ${{ secrets.DOCKERHUB_NAMESPACE }}/leadops-web:${{ github.sha }}
+          cache-from: type=gha,scope=leadops-web
+          cache-to: type=gha,mode=max,scope=leadops-web
+
+  deploy:
+    name: Deploy changed services to EC2
+    runs-on: ubuntu-latest
+    needs:
+      - changes
+      - build
+    if: always() && needs.build.result == 'success' && (needs.changes.outputs.api == 'true' || needs.changes.outputs.web == 'true' || needs.changes.outputs.infra == 'true')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/ec2_key
+          chmod 600 ~/.ssh/ec2_key
+          ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Upload compose file
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/ec2_key "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" "mkdir -p ${{ secrets.EC2_APP_DIR }}"
+          scp -i ~/.ssh/ec2_key docker/compose/docker-compose.prod.yml "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:${{ secrets.EC2_APP_DIR }}/docker-compose.prod.yml"
+
+      - name: Write production env on server
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/leadops.env.production <<EOF
+          DOCKERHUB_NAMESPACE=${{ secrets.DOCKERHUB_NAMESPACE }}
+          API_IMAGE_TAG=latest
+          WEB_IMAGE_TAG=latest
+          POSTGRES_USER=${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB=${{ secrets.POSTGRES_DB }}
+          POSTGRES_PORT=${{ secrets.POSTGRES_PORT }}
+          REDIS_PORT=${{ secrets.REDIS_PORT }}
+          API_PORT=${{ secrets.API_PORT }}
+          WEB_PORT=${{ secrets.WEB_PORT }}
+          JWT_ACCESS_SECRET=${{ secrets.JWT_ACCESS_SECRET }}
+          JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}
+          JWT_ACCESS_EXPIRES_IN_SECONDS=${{ secrets.JWT_ACCESS_EXPIRES_IN_SECONDS }}
+          JWT_REFRESH_EXPIRES_IN_SECONDS=${{ secrets.JWT_REFRESH_EXPIRES_IN_SECONDS }}
+          CORS_ORIGIN=${{ secrets.CORS_ORIGIN }}
+          APP_URL=${{ secrets.APP_URL }}
+          NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}
+          SUPER_ADMIN_NAME=${{ secrets.SUPER_ADMIN_NAME }}
+          SUPER_ADMIN_EMAIL=${{ secrets.SUPER_ADMIN_EMAIL }}
+          SUPER_ADMIN_PASSWORD=${{ secrets.SUPER_ADMIN_PASSWORD }}
+          AWS_REGION=${{ secrets.AWS_REGION }}
+          AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          SES_FROM_EMAIL=${{ secrets.SES_FROM_EMAIL }}
+          RUN_MIGRATIONS=${{ secrets.RUN_MIGRATIONS }}
+          SEED_ON_START=${{ secrets.SEED_ON_START }}
+          EOF
+          sed -i 's/^ *//' /tmp/leadops.env.production
+          scp -i ~/.ssh/ec2_key /tmp/leadops.env.production "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:${{ secrets.EC2_APP_DIR }}/.env.production"
+          ssh -i ~/.ssh/ec2_key "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" "chmod 600 ${{ secrets.EC2_APP_DIR }}/.env.production"
+
+      - name: Pull and restart changed services
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          services=""
+          if [ "${{ needs.changes.outputs.api }}" = "true" ]; then
+            services="$services api"
+          fi
+          if [ "${{ needs.changes.outputs.web }}" = "true" ]; then
+            services="$services web"
+          fi
+          if [ "${{ needs.changes.outputs.infra }}" = "true" ]; then
+            services="$services postgres redis"
+          fi
+
+          ssh -i ~/.ssh/ec2_key "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" "cd ${{ secrets.EC2_APP_DIR }} && \
+            echo '${{ secrets.DOCKERHUB_TOKEN }}' | docker login -u '${{ secrets.DOCKERHUB_USERNAME }}' --password-stdin && \
+            docker compose --env-file .env.production -f docker-compose.prod.yml pull $services && \
+            docker compose --env-file .env.production -f docker-compose.prod.yml up -d --no-deps $services && \
+            docker image prune -f"
