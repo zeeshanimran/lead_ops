@@ -53,11 +53,6 @@ jobs:
             infra=true
           fi
 
-          if [ "$infra" = "true" ]; then
-            api=true
-            web=true
-          fi
-
           echo "api=$api" >> "$GITHUB_OUTPUT"
           echo "web=$web" >> "$GITHUB_OUTPUT"
           echo "infra=$infra" >> "$GITHUB_OUTPUT"
@@ -112,7 +107,7 @@ jobs:
     needs:
       - changes
       - build
-    if: always() && needs.build.result == 'success' && (needs.changes.outputs.api == 'true' || needs.changes.outputs.web == 'true' || needs.changes.outputs.infra == 'true')
+    if: always() && (needs.build.result == 'success' || needs.build.result == 'skipped') && (needs.changes.outputs.api == 'true' || needs.changes.outputs.web == 'true' || needs.changes.outputs.infra == 'true')
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -181,8 +176,10 @@ jobs:
           if [ "${{ needs.changes.outputs.web }}" = "true" ]; then
             services="$services web"
           fi
-          if [ "${{ needs.changes.outputs.infra }}" = "true" ]; then
-            services="$services postgres redis"
+
+          if [ -z "$services" ]; then
+            ssh -i ~/.ssh/ec2_key "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" "cd ${{ secrets.EC2_APP_DIR }} && docker compose --env-file .env.production -f docker-compose.prod.yml config --quiet"
+            exit 0
           fi
 
           ssh -i ~/.ssh/ec2_key "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" "cd ${{ secrets.EC2_APP_DIR }} && \

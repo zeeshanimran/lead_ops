@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "nest start --watch",
     "build": "nest build",
-    "start": "node dist/main.js",
+    "start": "node dist/src/main.js",
     "lint": "eslint \"src/**/*.ts\"",
     "test:e2e:lead-flow": "tsx scripts/e2e-lead-call-flow.ts",
     "prisma:generate": "prisma generate",
