@@ -228,23 +228,6 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  async sendNotification(to: string | string[], subject: string, message: string, actionUrl?: string) {
-    const textCta = actionUrl ? `\n\nOpen LeadOps: ${actionUrl}` : '';
-    return this.send({
-      to,
-      subject,
-      text: `${message}${textCta}`,
-      html: emailShell({
-        eyebrow: 'LeadOps notification',
-        title: subject,
-        content: `
-          <p style="margin:0 0 18px;">${escapeHtml(message)}</p>
-          ${actionUrl ? actionButton(actionUrl, 'Open LeadOps') : ''}
-        `,
-      }),
-    });
-  }
-
   async sendLeadSubmission(input: LeadSubmissionEmailInput) {
     const leadUrl = this.adminLeadLink(input.leadId);
     const rows: Array<[string, string | undefined | null]> = [

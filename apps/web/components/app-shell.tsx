@@ -59,17 +59,50 @@ export function AppShell({ children, role }: { children: ReactNode; role: Sessio
   const [profileOpen, setProfileOpen] = useState(false);
 
   useEffect(() => {
-    const existing = getSession();
-    if (!existing) {
-      router.replace('/login');
-      return;
+    let cancelled = false;
+
+    async function verifySession() {
+      setCurrentSession(null);
+
+      const existing = getSession();
+      if (!existing) {
+        router.replace('/login');
+        return;
+      }
+
+      try {
+        const verifiedUser = await api<Session['user']>('/users/me');
+        if (cancelled) return;
+
+        const latest = getSession() ?? existing;
+        const nextSession = { ...latest, user: verifiedUser };
+        setSession(nextSession);
+
+        if (verifiedUser.role !== role) {
+          router.replace(roleHome(verifiedUser.role));
+          return;
+        }
+
+        setCurrentSession(nextSession);
+      } catch {
+        // The shared API helper handles 401 by clearing the session, showing a toast,
+        // and redirecting to login. Keep this shell in its loading state while that happens.
+      }
     }
-    if (existing.user.role !== role) {
-      router.replace(roleHome(existing.user.role));
-      return;
-    }
-    setCurrentSession(existing);
+
+    void verifySession();
+
+    return () => {
+      cancelled = true;
+    };
   }, [role, router]);
+
+  useEffect(() => {
+    const existing = getSession();
+    if (!existing && session) {
+      setCurrentSession(null);
+    }
+  }, [pathname, session]);
 
   const title = useMemo(() => nav[role].find(([href]) => href === pathname)?.[1] ?? 'LeadOps CRM', [pathname, role]);
   useEffect(() => {
