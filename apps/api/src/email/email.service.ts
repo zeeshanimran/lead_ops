@@ -44,6 +44,30 @@ type CallAssignmentEmailInput = {
   };
 };
 
+type LeadSubmissionEmailInput = {
+  to: string[];
+  leadId: string;
+  bdName: string;
+  bdEmail: string;
+  companyName: string;
+  profileName: string;
+  nature: string;
+  techStackName: string;
+  payrate: string;
+  proofType: string;
+  proofNotes?: string | null;
+  proofUrl?: string | null;
+  resumeUrl?: string | null;
+  job?: {
+    jobId: string;
+    platform: string;
+    companyName: string;
+    jobLink: string;
+    jobDescription: string;
+    status: string;
+  } | null;
+};
+
 type CallAcceptedEmailInput = {
   bdEmail: string;
   bdName: string;
@@ -172,6 +196,59 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
         content: `
           <p style="margin:0 0 18px;">${escapeHtml(message)}</p>
           ${actionUrl ? actionButton(actionUrl, 'Open LeadOps') : ''}
+        `,
+      }),
+    });
+  }
+
+  async sendLeadSubmission(input: LeadSubmissionEmailInput) {
+    const leadUrl = this.adminLeadLink(input.leadId);
+    const rows: Array<[string, string | undefined | null]> = [
+      ['Submitted by', `${input.bdName} (${input.bdEmail})`],
+      ['Company / lead name', input.companyName],
+      ['Profile name', input.profileName],
+      ['Nature', label(input.nature)],
+      ['Tech stack', input.techStackName],
+      ['Payrate', input.payrate],
+      ['Proof type', label(input.proofType)],
+      ['Proof notes', input.proofNotes],
+      ['Proof URL', input.proofUrl],
+      ['Resume/Profile URL', input.resumeUrl],
+    ];
+    const jobRows: Array<[string, string | undefined | null]> = input.job
+      ? [
+          ['Job ID', input.job.jobId],
+          ['Job platform', input.job.platform],
+          ['Job company', input.job.companyName],
+          ['Job status', label(input.job.status)],
+          ['Job link', input.job.jobLink],
+          ['Job description', input.job.jobDescription],
+        ]
+      : [];
+
+    return this.send({
+      to: input.to,
+      subject: `New lead pending approval: ${input.companyName}`,
+      text: [
+        `${input.bdName} submitted a new lead for approval.`,
+        '',
+        ...rows.map(([name, value]) => `${name}: ${value || '-'}`),
+        ...(jobRows.length ? ['', 'Related job:', ...jobRows.map(([name, value]) => `${name}: ${value || '-'}`)] : []),
+        '',
+        `Review lead: ${leadUrl}`,
+      ].join('\n'),
+      html: emailShell({
+        eyebrow: 'LeadOps notification',
+        title: 'New lead pending approval',
+        content: `
+          <p style="margin:0 0 18px;"><strong>${escapeHtml(input.bdName)}</strong> submitted a new lead for <strong>${escapeHtml(input.companyName)}</strong>. Review the details below and approve, dismiss, or add notes in LeadOps.</p>
+          ${actionButton(leadUrl, 'Review lead')}
+          ${detailsTable(rows)}
+          ${
+            jobRows.length
+              ? `<h3 style="margin:24px 0 8px;font-size:16px;color:#111827;">Related job</h3>${detailsTable(jobRows)}`
+              : ''
+          }
         `,
       }),
     });

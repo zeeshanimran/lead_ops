@@ -124,11 +124,7 @@ export class LeadsService {
         jobId: dto.jobId,
       });
     }
-    await this.notifySuperAdmins(
-      'New lead pending approval',
-      `${lead.createdByBd.name} submitted a lead for ${lead.companyName}.`,
-      lead.id,
-    );
+    await this.notifyLeadSubmitted(lead);
     await this.auditLogs.write(user.sub, 'LEAD_CREATED', 'Lead', lead.id);
     return lead;
   }
@@ -441,6 +437,38 @@ export class LeadsService {
       message,
       leadId ? this.email.adminLeadLink(leadId) : undefined,
     );
+  }
+
+  private async notifyLeadSubmitted(lead: Prisma.LeadGetPayload<{ include: typeof includeLead }>) {
+    const superAdmins = await this.prisma.user.findMany({
+      where: { role: Role.SUPER_ADMIN, status: 'ACTIVE', deletedAt: null },
+      select: { email: true },
+    });
+    await this.email.sendLeadSubmission({
+      to: superAdmins.map((admin) => admin.email),
+      leadId: lead.id,
+      bdName: lead.createdByBd.name,
+      bdEmail: lead.createdByBd.email,
+      companyName: lead.companyName,
+      profileName: lead.profileName,
+      nature: lead.nature,
+      techStackName: lead.techStack.name,
+      payrate: lead.payrate,
+      proofType: lead.proofType,
+      proofNotes: lead.proofNotes,
+      proofUrl: lead.proofUrl,
+      resumeUrl: lead.resumeUrl,
+      job: lead.job
+        ? {
+            jobId: lead.job.jobId,
+            platform: lead.job.platform,
+            companyName: lead.job.companyName,
+            jobLink: lead.job.jobLink,
+            jobDescription: lead.job.jobDescription,
+            status: lead.job.status,
+          }
+        : null,
+    });
   }
 }
 

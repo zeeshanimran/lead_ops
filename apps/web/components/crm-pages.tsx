@@ -495,6 +495,12 @@ export function LeadDetailPage({ role, id }: { role: 'admin' | 'bd'; id: string 
           <Badge tone={statusTone(lead.status)}>{label(lead.status)}</Badge>
         </div>
       </Card>
+      {role === 'admin' && ['PENDING_APPROVAL', 'DISMISSED', 'REJECTED', 'CLOSED'].includes(lead.status) ? (
+        <Card>
+          <h3 className="mb-3 font-black">Admin Review</h3>
+          <ApprovalActions lead={lead} reload={reload} />
+        </Card>
+      ) : null}
       <div className="grid min-w-0 gap-4 lg:grid-cols-3">
         <Card><h3 className="mb-3 font-black">Overview</h3><InfoRows rows={[['Created BD', lead.createdByBd?.name], ['Assigned BD', lead.assignedBd?.name], ['Approved By', lead.approvedByAdmin?.name], ['Current Stage', label(lead.currentStage)], ['Nature', label(lead.nature)]]} /></Card>
         <Card><h3 className="mb-3 font-black">Proof / Notes</h3><InfoRows rows={[['Proof Type', label(lead.proofType)], ['Proof URL', lead.proofUrl], ['Proof Notes', lead.proofNotes], ['Admin Notes', lead.adminNotes], ['Dismissal Reason', lead.dismissalReason]]} /></Card>
