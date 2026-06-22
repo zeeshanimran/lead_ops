@@ -161,15 +161,17 @@ export class LeadsService {
       assignedBdId,
     });
     await this.auditLogs.write(actorId, 'LEAD_APPROVED', 'Lead', id, { assignedBdId });
-    await this.email.sendNotification(assignedBd.email, 'Lead ready to schedule', `${lead.companyName} is ready to schedule.`);
+    await this.notifyBdLeadDecision(lead, assignedBd.email, 'APPROVED');
     return lead;
   }
 
-  dismiss(actorId: string, id: string, dto: ApprovalDto) {
-    return this.transition(actorId, id, LeadStatus.DISMISSED, 'LEAD_DISMISSED', 'Lead dismissed', {
+  async dismiss(actorId: string, id: string, dto: ApprovalDto) {
+    const lead = await this.transition(actorId, id, LeadStatus.DISMISSED, 'LEAD_DISMISSED', 'Lead dismissed', {
       adminNotes: dto.notes,
       dismissalReason: dto.reason ?? dto.notes,
     });
+    await this.notifyBdLeadDecision(lead, lead.assignedBd?.email ?? lead.createdByBd.email, 'DISMISSED');
+    return lead;
   }
 
   reopen(actorId: string, id: string, dto: ApprovalDto) {
@@ -251,11 +253,7 @@ export class LeadsService {
     });
 
     await this.auditLogs.write(user.sub, 'CALL_SCHEDULED', 'LeadCall', result.id, { leadId: id, closerId: dto.closerId });
-    await this.notifySuperAdmins(
-      `Call #${result.callNumber} scheduled`,
-      `${result.scheduledByBd.name} scheduled ${labelStage(result.callStage)} for ${result.lead.companyName} with ${result.closer.name}.`,
-      result.leadId,
-    );
+    await this.notifyCallScheduled(result);
     await this.email.sendCallAssignment({
       closerEmail: closer.email,
       closerName: closer.name,
@@ -320,11 +318,7 @@ export class LeadsService {
     });
 
     await this.auditLogs.write(user.sub, 'CALL_ACCEPTED', 'LeadCall', id, { leadId: call.leadId });
-    await this.notifySuperAdmins(
-      `Call #${call.callNumber} accepted`,
-      `${call.closer.name} accepted ${labelStage(call.callStage)} for ${call.lead.companyName}.`,
-      call.leadId,
-    );
+    await this.notifyCallAccepted(call);
     await this.email.sendCallAccepted({
       bdEmail: call.scheduledByBd.email,
       bdName: call.scheduledByBd.name,
@@ -364,11 +358,7 @@ export class LeadsService {
       manualInviteStatus: dto.manualInviteStatus,
     });
     await this.auditLogs.write(user.sub, 'MANUAL_INVITE_UPDATED', 'LeadCall', dto.leadCallId, { leadId: id });
-    await this.notifySuperAdmins(
-      `Manual invite updated for Call #${updated.callNumber}`,
-      `${updated.scheduledByBd.name} marked the manual invite ${labelStatus(updated.manualInviteStatus)} for ${updated.lead.companyName}.`,
-      id,
-    );
+    await this.notifyManualInviteUpdated(updated);
     return updated;
   }
 
@@ -426,19 +416,6 @@ export class LeadsService {
     });
   }
 
-  private async notifySuperAdmins(subject: string, message: string, leadId?: string) {
-    const superAdmins = await this.prisma.user.findMany({
-      where: { role: Role.SUPER_ADMIN, status: 'ACTIVE', deletedAt: null },
-      select: { email: true },
-    });
-    await this.email.sendNotification(
-      superAdmins.map((admin) => admin.email),
-      subject,
-      message,
-      leadId ? this.email.adminLeadLink(leadId) : undefined,
-    );
-  }
-
   private async notifyLeadSubmitted(lead: Prisma.LeadGetPayload<{ include: typeof includeLead }>) {
     const superAdmins = await this.prisma.user.findMany({
       where: { role: Role.SUPER_ADMIN, status: 'ACTIVE', deletedAt: null },
@@ -469,6 +446,145 @@ export class LeadsService {
           }
         : null,
     });
+  }
+
+  private async notifyCallScheduled(call: Prisma.LeadCallGetPayload<{ include: typeof includeCall }>) {
+    const superAdmins = await this.prisma.user.findMany({
+      where: { role: Role.SUPER_ADMIN, status: 'ACTIVE', deletedAt: null },
+      select: { email: true },
+    });
+    await this.email.sendAdminCallScheduled({
+      to: superAdmins.map((admin) => admin.email),
+      leadId: call.leadId,
+      closerEmail: call.closer.email,
+      closerName: call.closer.name,
+      bdName: call.scheduledByBd.name,
+      bdEmail: call.scheduledByBd.email,
+      callId: call.id,
+      callNumber: call.callNumber,
+      callStage: call.callStage,
+      scheduledAt: call.scheduledAt,
+      manualInviteStatus: call.manualInviteStatus,
+      manualInviteLink: call.manualInviteLink,
+      bdNotes: call.bdNotes,
+      lead: {
+        companyName: call.lead.companyName,
+        profileName: call.lead.profileName,
+        nature: call.lead.nature,
+        techStackName: call.lead.techStack.name,
+        payrate: call.lead.payrate,
+        proofType: call.lead.proofType,
+        proofNotes: call.lead.proofNotes,
+        proofUrl: call.lead.proofUrl,
+        resumeUrl: call.lead.resumeUrl,
+        adminNotes: call.lead.adminNotes,
+        job: call.lead.job
+          ? {
+              jobId: call.lead.job.jobId,
+              platform: call.lead.job.platform,
+              companyName: call.lead.job.companyName,
+              jobLink: call.lead.job.jobLink,
+              jobDescription: call.lead.job.jobDescription,
+            }
+          : null,
+      },
+    });
+  }
+
+  private async notifyCallAccepted(call: Prisma.LeadCallGetPayload<{ include: typeof includeCall }>) {
+    const superAdmins = await this.prisma.user.findMany({
+      where: { role: Role.SUPER_ADMIN, status: 'ACTIVE', deletedAt: null },
+      select: { email: true },
+    });
+    await this.email.sendAdminCallAccepted({
+      to: superAdmins.map((admin) => admin.email),
+      leadId: call.leadId,
+      closerEmail: call.closer.email,
+      closerName: call.closer.name,
+      bdName: call.scheduledByBd.name,
+      bdEmail: call.scheduledByBd.email,
+      callId: call.id,
+      callNumber: call.callNumber,
+      callStage: call.callStage,
+      scheduledAt: call.scheduledAt,
+      manualInviteStatus: call.manualInviteStatus,
+      manualInviteLink: call.manualInviteLink,
+      bdNotes: call.bdNotes,
+      lead: this.callEmailLead(call),
+    });
+  }
+
+  private async notifyManualInviteUpdated(call: Prisma.LeadCallGetPayload<{ include: typeof includeCall }>) {
+    const superAdmins = await this.prisma.user.findMany({
+      where: { role: Role.SUPER_ADMIN, status: 'ACTIVE', deletedAt: null },
+      select: { email: true },
+    });
+    await this.email.sendAdminManualInviteUpdated({
+      to: superAdmins.map((admin) => admin.email),
+      leadId: call.leadId,
+      closerEmail: call.closer.email,
+      closerName: call.closer.name,
+      bdName: call.scheduledByBd.name,
+      bdEmail: call.scheduledByBd.email,
+      callId: call.id,
+      callNumber: call.callNumber,
+      callStage: call.callStage,
+      scheduledAt: call.scheduledAt,
+      manualInviteStatus: call.manualInviteStatus,
+      manualInviteLink: call.manualInviteLink,
+      bdNotes: call.bdNotes,
+      lead: this.callEmailLead(call),
+    });
+  }
+
+  private async notifyBdLeadDecision(lead: Prisma.LeadGetPayload<{ include: typeof includeLead }>, to: string, decision: 'APPROVED' | 'DISMISSED') {
+    await this.email.sendLeadDecision({
+      to,
+      decision,
+      leadId: lead.id,
+      companyName: lead.companyName,
+      profileName: lead.profileName,
+      nature: lead.nature,
+      techStackName: lead.techStack.name,
+      payrate: lead.payrate,
+      proofType: lead.proofType,
+      adminNotes: lead.adminNotes,
+      dismissalReason: lead.dismissalReason,
+      assignedBdName: lead.assignedBd?.name,
+      job: lead.job
+        ? {
+            jobId: lead.job.jobId,
+            platform: lead.job.platform,
+            companyName: lead.job.companyName,
+            jobLink: lead.job.jobLink,
+            status: lead.job.status,
+          }
+        : null,
+    });
+  }
+
+  private callEmailLead(call: Prisma.LeadCallGetPayload<{ include: typeof includeCall }>) {
+    return {
+      companyName: call.lead.companyName,
+      profileName: call.lead.profileName,
+      nature: call.lead.nature,
+      techStackName: call.lead.techStack.name,
+      payrate: call.lead.payrate,
+      proofType: call.lead.proofType,
+      proofNotes: call.lead.proofNotes,
+      proofUrl: call.lead.proofUrl,
+      resumeUrl: call.lead.resumeUrl,
+      adminNotes: call.lead.adminNotes,
+      job: call.lead.job
+        ? {
+            jobId: call.lead.job.jobId,
+            platform: call.lead.job.platform,
+            companyName: call.lead.job.companyName,
+            jobLink: call.lead.job.jobLink,
+            jobDescription: call.lead.job.jobDescription,
+          }
+        : null,
+    };
   }
 }
 

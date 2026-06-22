@@ -44,6 +44,28 @@ type CallAssignmentEmailInput = {
   };
 };
 
+type AdminCallScheduledEmailInput = CallAssignmentEmailInput & {
+  to: string[];
+  leadId: string;
+};
+
+type FeedbackSubmittedEmailInput = {
+  to: string[];
+  leadId: string;
+  callNumber: number;
+  callStage: string;
+  scheduledAt: Date;
+  closerName: string;
+  scheduledByBdName?: string | null;
+  callStatus: string;
+  result: string;
+  comments: string;
+  payrateDiscussed?: string | null;
+  nextAction?: string | null;
+  nextCallRequired: boolean;
+  lead: CallAssignmentEmailInput['lead'];
+};
+
 type LeadSubmissionEmailInput = {
   to: string[];
   leadId: string;
@@ -64,6 +86,28 @@ type LeadSubmissionEmailInput = {
     companyName: string;
     jobLink: string;
     jobDescription: string;
+    status: string;
+  } | null;
+};
+
+type LeadDecisionEmailInput = {
+  to: string;
+  decision: 'APPROVED' | 'DISMISSED';
+  leadId: string;
+  companyName: string;
+  profileName: string;
+  nature: string;
+  techStackName: string;
+  payrate: string;
+  proofType: string;
+  adminNotes?: string | null;
+  dismissalReason?: string | null;
+  assignedBdName?: string | null;
+  job?: {
+    jobId: string;
+    platform: string;
+    companyName: string;
+    jobLink: string;
     status: string;
   } | null;
 };
@@ -254,6 +298,240 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  async sendLeadDecision(input: LeadDecisionEmailInput) {
+    const leadUrl = this.bdLeadLink(input.leadId);
+    const approved = input.decision === 'APPROVED';
+    const subject = approved ? `Lead approved: ${input.companyName}` : `Lead dismissed: ${input.companyName}`;
+    const title = approved ? 'Lead approved and ready to schedule' : 'Lead dismissed by Admin';
+    const rows: Array<[string, string | undefined | null]> = [
+      ['Company / lead name', input.companyName],
+      ['Profile name', input.profileName],
+      ['Nature', label(input.nature)],
+      ['Tech stack', input.techStackName],
+      ['Payrate', input.payrate],
+      ['Proof type', label(input.proofType)],
+      ['Assigned BD', input.assignedBdName],
+      ['Admin notes', input.adminNotes],
+      ['Dismissal reason', input.dismissalReason],
+    ];
+    const jobRows: Array<[string, string | undefined | null]> = input.job
+      ? [
+          ['Job ID', input.job.jobId],
+          ['Job platform', input.job.platform],
+          ['Job company', input.job.companyName],
+          ['Job status', label(input.job.status)],
+          ['Job link', input.job.jobLink],
+        ]
+      : [];
+
+    return this.send({
+      to: input.to,
+      subject,
+      text: [
+        approved ? `${input.companyName} has been approved and is ready to schedule.` : `${input.companyName} has been dismissed by Admin.`,
+        '',
+        ...rows.map(([name, value]) => `${name}: ${value || '-'}`),
+        ...(jobRows.length ? ['', 'Related job:', ...jobRows.map(([name, value]) => `${name}: ${value || '-'}`)] : []),
+        '',
+        `Open lead: ${leadUrl}`,
+      ].join('\n'),
+      html: emailShell({
+        eyebrow: 'LeadOps notification',
+        title,
+        content: `
+          <p style="margin:0 0 18px;">${
+            approved
+              ? `<strong>${escapeHtml(input.companyName)}</strong> has been approved and is ready for scheduling.`
+              : `<strong>${escapeHtml(input.companyName)}</strong> was dismissed by Admin. Review the details below before taking any next step.`
+          }</p>
+          ${actionButton(leadUrl, 'Open lead')}
+          ${detailsTable(rows)}
+          ${
+            jobRows.length
+              ? `<h3 style="margin:24px 0 8px;font-size:16px;color:#111827;">Related job</h3>${detailsTable(jobRows)}`
+              : ''
+          }
+        `,
+      }),
+    });
+  }
+
+  async sendAdminCallScheduled(input: AdminCallScheduledEmailInput) {
+    const leadUrl = this.adminLeadLink(input.leadId);
+    const scheduled = formatDateTime(input.scheduledAt);
+    const rows: Array<[string, string | undefined | null]> = [
+      ['Lead company', input.lead.companyName],
+      ['Profile', input.lead.profileName],
+      ['Tech stack', input.lead.techStackName],
+      ['Nature', label(input.lead.nature)],
+      ['Payrate', input.lead.payrate],
+      ['Call', `#${input.callNumber} - ${label(input.callStage)}`],
+      ['Scheduled time', scheduled],
+      ['Scheduled by BD', `${input.bdName} (${input.bdEmail})`],
+      ['Assigned closer', input.closerName],
+      ['Manual invite status', label(input.manualInviteStatus)],
+      ['Manual invite link', input.manualInviteLink],
+      ['BD notes', input.bdNotes],
+      ['Proof type', label(input.lead.proofType)],
+      ['Proof notes', input.lead.proofNotes],
+      ['Proof URL', input.lead.proofUrl],
+      ['Resume/Profile URL', input.lead.resumeUrl],
+      ['Admin notes', input.lead.adminNotes],
+    ];
+    const jobRows: Array<[string, string | undefined | null]> = input.lead.job
+      ? [
+          ['Job ID', input.lead.job.jobId],
+          ['Job platform', input.lead.job.platform],
+          ['Job company', input.lead.job.companyName],
+          ['Job link', input.lead.job.jobLink],
+          ['Job description', input.lead.job.jobDescription],
+        ]
+      : [];
+
+    return this.send({
+      to: input.to,
+      subject: `Call #${input.callNumber} scheduled: ${input.lead.companyName}`,
+      text: [
+        `${input.bdName} scheduled Call #${input.callNumber} (${label(input.callStage)}) for ${input.lead.companyName} with ${input.closerName}.`,
+        '',
+        ...rows.map(([name, value]) => `${name}: ${value || '-'}`),
+        ...(jobRows.length ? ['', 'Related job:', ...jobRows.map(([name, value]) => `${name}: ${value || '-'}`)] : []),
+        '',
+        `Open lead: ${leadUrl}`,
+      ].join('\n'),
+      html: emailShell({
+        eyebrow: 'LeadOps notification',
+        title: `Call #${input.callNumber} scheduled`,
+        content: `
+          <p style="margin:0 0 18px;"><strong>${escapeHtml(input.bdName)}</strong> scheduled Call #${input.callNumber} (${escapeHtml(label(input.callStage))}) for <strong>${escapeHtml(input.lead.companyName)}</strong> with <strong>${escapeHtml(input.closerName)}</strong>.</p>
+          ${actionButton(leadUrl, 'Open lead')}
+          ${detailsTable(rows)}
+          ${
+            jobRows.length
+              ? `<h3 style="margin:24px 0 8px;font-size:16px;color:#111827;">Related job</h3>${detailsTable(jobRows)}`
+              : ''
+          }
+        `,
+      }),
+    });
+  }
+
+  async sendAdminCallAccepted(input: AdminCallScheduledEmailInput) {
+    const leadUrl = this.adminLeadLink(input.leadId);
+    const rows: Array<[string, string | undefined | null]> = [
+      ['Lead company', input.lead.companyName],
+      ['Profile', input.lead.profileName],
+      ['Tech stack', input.lead.techStackName],
+      ['Call', `#${input.callNumber} - ${label(input.callStage)}`],
+      ['Scheduled time', formatDateTime(input.scheduledAt)],
+      ['Accepted by closer', input.closerName],
+      ['Scheduled by BD', `${input.bdName} (${input.bdEmail})`],
+      ['Manual invite status', label(input.manualInviteStatus)],
+      ['Manual invite link', input.manualInviteLink],
+      ['BD notes', input.bdNotes],
+      ['Payrate', input.lead.payrate],
+      ['Proof notes', input.lead.proofNotes],
+    ];
+    return this.send({
+      to: input.to,
+      subject: `Call #${input.callNumber} accepted: ${input.lead.companyName}`,
+      text: [
+        `${input.closerName} accepted Call #${input.callNumber} (${label(input.callStage)}) for ${input.lead.companyName}.`,
+        '',
+        ...rows.map(([name, value]) => `${name}: ${value || '-'}`),
+        '',
+        `Open lead: ${leadUrl}`,
+      ].join('\n'),
+      html: emailShell({
+        eyebrow: 'LeadOps notification',
+        title: `Call #${input.callNumber} accepted`,
+        content: `
+          <p style="margin:0 0 18px;"><strong>${escapeHtml(input.closerName)}</strong> accepted Call #${input.callNumber} (${escapeHtml(label(input.callStage))}) for <strong>${escapeHtml(input.lead.companyName)}</strong>.</p>
+          ${actionButton(leadUrl, 'Open lead')}
+          ${detailsTable(rows)}
+        `,
+      }),
+    });
+  }
+
+  async sendAdminManualInviteUpdated(input: AdminCallScheduledEmailInput) {
+    const leadUrl = this.adminLeadLink(input.leadId);
+    const rows: Array<[string, string | undefined | null]> = [
+      ['Lead company', input.lead.companyName],
+      ['Profile', input.lead.profileName],
+      ['Call', `#${input.callNumber} - ${label(input.callStage)}`],
+      ['Scheduled time', formatDateTime(input.scheduledAt)],
+      ['Scheduled by BD', `${input.bdName} (${input.bdEmail})`],
+      ['Assigned closer', input.closerName],
+      ['Manual invite status', label(input.manualInviteStatus)],
+      ['Manual invite link', input.manualInviteLink],
+      ['BD notes', input.bdNotes],
+      ['Tech stack', input.lead.techStackName],
+      ['Payrate', input.lead.payrate],
+    ];
+    return this.send({
+      to: input.to,
+      subject: `Manual invite updated: Call #${input.callNumber} - ${input.lead.companyName}`,
+      text: [
+        `${input.bdName} updated the manual invite for Call #${input.callNumber} (${label(input.callStage)}) for ${input.lead.companyName}.`,
+        '',
+        ...rows.map(([name, value]) => `${name}: ${value || '-'}`),
+        '',
+        `Open lead: ${leadUrl}`,
+      ].join('\n'),
+      html: emailShell({
+        eyebrow: 'LeadOps notification',
+        title: `Manual invite updated for Call #${input.callNumber}`,
+        content: `
+          <p style="margin:0 0 18px;"><strong>${escapeHtml(input.bdName)}</strong> updated the manual invite for <strong>${escapeHtml(input.lead.companyName)}</strong>.</p>
+          ${actionButton(leadUrl, 'Open lead')}
+          ${detailsTable(rows)}
+        `,
+      }),
+    });
+  }
+
+  async sendFeedbackSubmitted(input: FeedbackSubmittedEmailInput) {
+    const leadUrl = this.adminLeadLink(input.leadId);
+    const rows: Array<[string, string | undefined | null]> = [
+      ['Lead company', input.lead.companyName],
+      ['Profile', input.lead.profileName],
+      ['Tech stack', input.lead.techStackName],
+      ['Call', `#${input.callNumber} - ${label(input.callStage)}`],
+      ['Scheduled time', formatDateTime(input.scheduledAt)],
+      ['Closer', input.closerName],
+      ['Scheduled by BD', input.scheduledByBdName],
+      ['Call status', label(input.callStatus)],
+      ['Result', label(input.result)],
+      ['Comments', input.comments],
+      ['Payrate discussed', input.payrateDiscussed],
+      ['Next action', input.nextAction],
+      ['Next call required', input.nextCallRequired ? 'Yes' : 'No'],
+      ['Lead payrate', input.lead.payrate],
+      ['Proof notes', input.lead.proofNotes],
+    ];
+    return this.send({
+      to: input.to,
+      subject: `Feedback submitted: Call #${input.callNumber} - ${input.lead.companyName}`,
+      text: [
+        `${input.closerName} submitted feedback for Call #${input.callNumber} (${label(input.callStage)}) for ${input.lead.companyName}.`,
+        '',
+        ...rows.map(([name, value]) => `${name}: ${value || '-'}`),
+        '',
+        `Open lead: ${leadUrl}`,
+      ].join('\n'),
+      html: emailShell({
+        eyebrow: 'LeadOps notification',
+        title: `Feedback submitted for Call #${input.callNumber}`,
+        content: `
+          <p style="margin:0 0 18px;"><strong>${escapeHtml(input.closerName)}</strong> submitted feedback for <strong>${escapeHtml(input.lead.companyName)}</strong>.</p>
+          ${actionButton(leadUrl, 'Open lead')}
+          ${detailsTable(rows)}
+        `,
+      }),
+    });
+  }
+
   async sendCallAssignment(input: CallAssignmentEmailInput) {
     const callUrl = this.closerCallLink(input.callId);
     const scheduled = formatDateTime(input.scheduledAt);
@@ -336,7 +614,9 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
         <p>Hi ${escapeHtml(input.bdName)},</p>
         <p><strong>${escapeHtml(input.closerName)}</strong> accepted Call #${input.callNumber} (${escapeHtml(label(input.callStage))}) for <strong>${escapeHtml(input.leadCompanyName)}</strong>.</p>
         ${detailsTable([
+          ['Lead company', input.leadCompanyName],
           ['Profile', input.leadProfileName],
+          ['Call', `#${input.callNumber} - ${label(input.callStage)}`],
           ['Scheduled time', formatDateTime(input.scheduledAt)],
         ])}
         ${actionButton(callUrl, 'Open call')}

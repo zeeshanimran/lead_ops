@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { FeedbackCallStatus, FeedbackResult, LeadCallStatus, LeadStatus, Role } from '@prisma/client';
+import { FeedbackCallStatus, FeedbackResult, LeadCallStatus, LeadStatus, Prisma, Role } from '@prisma/client';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { AuthenticatedUser } from '../common/types/authenticated-user';
 import { EmailService } from '../email/email.service';
@@ -7,6 +7,19 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateFeedbackDto } from './dto/create-feedback.dto';
 
 const publicUser = { id: true, name: true, email: true, role: true, status: true } as const;
+
+const includeFeedbackCall = {
+  lead: {
+    include: {
+      createdByBd: { select: publicUser },
+      assignedBd: { select: publicUser },
+      techStack: true,
+      job: true,
+    },
+  },
+  closer: { select: publicUser },
+  scheduledByBd: { select: publicUser },
+} as const;
 
 @Injectable()
 export class FeedbackService {
@@ -45,7 +58,7 @@ export class FeedbackService {
     const leadCallId = dto.leadCallId;
     const call = await this.prisma.leadCall.findUnique({
       where: { id: leadCallId },
-      include: { lead: true, closer: { select: publicUser } },
+      include: includeFeedbackCall,
     });
     if (!call) throw new NotFoundException('Call not found');
     if (call.closerId !== user.sub) throw new ForbiddenException('Call is not assigned to this closer');
@@ -98,25 +111,51 @@ export class FeedbackService {
       leadCallId,
       result: dto.result,
     });
-    await this.notifySuperAdmins(
-      `Feedback submitted for Call #${call.callNumber}`,
-      `${call.closer.name} submitted feedback for ${call.lead.companyName}. Result: ${label(dto.result)}.${dto.nextCallRequired ? ' Next call is required.' : ''}`,
-      call.leadId,
-    );
+    await this.notifyFeedbackSubmitted(call, dto);
     return feedback;
   }
 
-  private async notifySuperAdmins(subject: string, message: string, leadId?: string) {
+  private async notifyFeedbackSubmitted(call: Prisma.LeadCallGetPayload<{ include: typeof includeFeedbackCall }>, dto: CreateFeedbackDto) {
     const superAdmins = await this.prisma.user.findMany({
       where: { role: Role.SUPER_ADMIN, status: 'ACTIVE', deletedAt: null },
       select: { email: true },
     });
-    await this.email.sendNotification(
-      superAdmins.map((admin) => admin.email),
-      subject,
-      message,
-      leadId ? this.email.adminLeadLink(leadId) : undefined,
-    );
+    await this.email.sendFeedbackSubmitted({
+      to: superAdmins.map((admin) => admin.email),
+      leadId: call.leadId,
+      callNumber: call.callNumber,
+      callStage: call.callStage,
+      scheduledAt: call.scheduledAt,
+      closerName: call.closer.name,
+      scheduledByBdName: call.scheduledByBd?.name,
+      callStatus: dto.callStatus,
+      result: dto.result,
+      comments: dto.comments,
+      payrateDiscussed: dto.payrateDiscussed,
+      nextAction: dto.nextAction,
+      nextCallRequired: dto.nextCallRequired,
+      lead: {
+        companyName: call.lead.companyName,
+        profileName: call.lead.profileName,
+        nature: call.lead.nature,
+        techStackName: call.lead.techStack.name,
+        payrate: call.lead.payrate,
+        proofType: call.lead.proofType,
+        proofNotes: call.lead.proofNotes,
+        proofUrl: call.lead.proofUrl,
+        resumeUrl: call.lead.resumeUrl,
+        adminNotes: call.lead.adminNotes,
+        job: call.lead.job
+          ? {
+              jobId: call.lead.job.jobId,
+              platform: call.lead.job.platform,
+              companyName: call.lead.job.companyName,
+              jobLink: call.lead.job.jobLink,
+              jobDescription: call.lead.job.jobDescription,
+            }
+          : null,
+      },
+    });
   }
 }
 
