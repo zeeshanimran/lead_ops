@@ -10,7 +10,6 @@ coverage
 **/coverage
 .env
 .env.*
-!.env.production.example
 .env.local
 apps/api/.env
 apps/api/.env.*
