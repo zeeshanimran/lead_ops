@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { FormEvent } from 'react';
 import { api, getSession, roleHome, setSession, type Session } from '@/lib/api';
-import { Button, Field, inputClass } from './ui';
+import { Button, Card, Field, inputClass, Skeleton } from './ui';
 
 const nav = {
   SUPER_ADMIN: [
@@ -110,7 +110,7 @@ export function AppShell({ children, role }: { children: ReactNode; role: Sessio
     setSettingsOpen(false);
   }, [pathname]);
 
-  if (!session) return <div className="grid min-h-screen place-items-center text-sm font-semibold text-slate-600">Loading CRM...</div>;
+  if (!session) return <AppShellSkeleton />;
 
   return (
     <div className="flex min-h-screen w-full overflow-x-hidden">
@@ -244,6 +244,48 @@ export function AppShell({ children, role }: { children: ReactNode; role: Sessio
           }}
         />
       ) : null}
+    </div>
+  );
+}
+
+function AppShellSkeleton() {
+  return (
+    <div className="flex min-h-screen w-full overflow-x-hidden bg-slate-50">
+      <aside className="hidden w-72 shrink-0 border-r border-red-900/30 bg-neutral-950 px-4 py-5 lg:block">
+        <Skeleton className="mb-6 h-11 w-44 bg-white/20" />
+        <Skeleton className="mb-4 h-20 w-full bg-white/10" />
+        <div className="grid gap-2">
+          {Array.from({ length: 8 }).map((_, index) => (
+            <Skeleton key={index} className="h-10 w-full bg-white/10" />
+          ))}
+        </div>
+      </aside>
+      <main className="min-w-0 flex-1">
+        <header className="flex min-h-16 items-center justify-between gap-3 border-b border-slate-200 bg-white px-3 sm:px-5">
+          <div className="flex min-w-0 items-center gap-3">
+            <Skeleton className="h-10 w-10 lg:hidden" />
+            <div>
+              <p className="text-sm font-black text-slate-800">Preparing your workspace</p>
+              <p className="mt-1 text-xs font-semibold text-slate-500">Checking your session and loading LeadOps</p>
+            </div>
+          </div>
+          <Skeleton className="h-10 w-10" />
+        </header>
+        <div className="grid min-w-0 gap-5 p-3 sm:p-5">
+          <Card>
+            <Skeleton className="h-8 w-56" />
+            <Skeleton className="mt-3 h-4 w-80 max-w-full" />
+          </Card>
+          <div className="grid min-w-0 gap-4 md:grid-cols-3">
+            {Array.from({ length: 3 }).map((_, index) => (
+              <Card key={index}>
+                <Skeleton className="h-3 w-24" />
+                <Skeleton className="mt-3 h-9 w-16" />
+              </Card>
+            ))}
+          </div>
+        </div>
+      </main>
     </div>
   );
 }

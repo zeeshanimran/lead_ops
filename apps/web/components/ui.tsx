@@ -41,6 +41,78 @@ export function Badge({ children, tone = 'slate' }: { children: ReactNode; tone?
   return <span className={cn('inline-flex rounded-full px-2.5 py-1 text-xs font-bold', styles[tone])}>{children}</span>;
 }
 
+export function Skeleton({ className }: { className?: string }) {
+  return <div className={cn('animate-pulse rounded-md bg-slate-200', className)} aria-hidden="true" />;
+}
+
+export function MetricSkeletonGrid({ count = 3 }: { count?: number }) {
+  return (
+    <div className="grid min-w-0 gap-4 md:grid-cols-3 xl:grid-cols-6">
+      {Array.from({ length: count }).map((_, index) => (
+        <Card key={index}>
+          <Skeleton className="h-3 w-24" />
+          <Skeleton className="mt-3 h-9 w-16" />
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+export function TableSkeleton({ columns, rows = 6 }: { columns: number; rows?: number }) {
+  return (
+    <Card className="p-0">
+      <div className="table-wrap">
+        <table className="lead-table">
+          <thead>
+            <tr>
+              {Array.from({ length: columns }).map((_, index) => (
+                <th key={index}>
+                  <Skeleton className="h-3 w-16 bg-slate-300" />
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {Array.from({ length: rows }).map((_, rowIndex) => (
+              <tr key={rowIndex}>
+                {Array.from({ length: columns }).map((_, columnIndex) => (
+                  <td key={columnIndex}>
+                    <Skeleton className={columnIndex === 0 ? 'h-4 w-36' : 'h-4 w-24'} />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
+export function DetailSkeleton() {
+  return (
+    <div className="grid min-w-0 gap-5">
+      <Card>
+        <Skeleton className="h-8 w-56" />
+        <Skeleton className="mt-3 h-4 w-80 max-w-full" />
+      </Card>
+      <div className="grid min-w-0 gap-4 lg:grid-cols-3">
+        {Array.from({ length: 3 }).map((_, index) => (
+          <Card key={index}>
+            <Skeleton className="mb-4 h-5 w-32" />
+            <div className="grid gap-3">
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-5/6" />
+              <Skeleton className="h-4 w-2/3" />
+            </div>
+          </Card>
+        ))}
+      </div>
+      <TableSkeleton columns={5} rows={3} />
+    </div>
+  );
+}
+
 export function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="grid min-w-0 gap-1.5 text-sm font-semibold text-slate-700">

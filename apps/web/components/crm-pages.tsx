@@ -19,7 +19,7 @@ import {
   TechStack,
   User,
 } from '@/types/domain';
-import { Badge, Button, Card, Field, inputClass, textareaClass } from './ui';
+import { Badge, Button, Card, DetailSkeleton, Field, inputClass, MetricSkeletonGrid, Skeleton, TableSkeleton, textareaClass } from './ui';
 
 type DashboardReport = {
   totals: {
@@ -45,18 +45,23 @@ type DashboardReport = {
 function useLoad<T>(path: string, enabled = true) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(enabled);
   const load = async () => {
+    setLoading(true);
     try {
       setData(await api<T>(path));
       setError('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Request failed');
+    } finally {
+      setLoading(false);
     }
   };
   useEffect(() => {
     if (enabled) void load();
+    else setLoading(false);
   }, [path, enabled]);
-  return { data, error, reload: load };
+  return { data, error, loading, reload: load };
 }
 
 function statusTone(status?: string): 'red' | 'green' | 'yellow' | 'slate' | 'blue' {
@@ -122,7 +127,7 @@ function PaginationControls({
 }
 
 export function DashboardPage({ role }: { role: Role }) {
-  const { data, error } = useLoad<DashboardReport>('/reports/dashboard');
+  const { data, error, loading } = useLoad<DashboardReport>('/reports/dashboard');
   const title = role === 'SUPER_ADMIN' ? 'Executive Dashboard' : role === 'BD' ? 'BD Dashboard' : 'Closer Dashboard';
   const cards = [
     ['Active BDs', data?.totals.activeBds],
@@ -142,19 +147,40 @@ export function DashboardPage({ role }: { role: Role }) {
         </p>
       </section>
       {error ? <Card className="text-sm font-semibold text-red-700">{error}</Card> : null}
-      <div className="grid min-w-0 gap-4 md:grid-cols-3 xl:grid-cols-6">
-        {cards.map(([name, value]) => (
-          <Card key={String(name)}>
-            <p className="text-xs font-bold uppercase text-slate-500">{name}</p>
-            <p className="mt-2 text-3xl font-black">{value ?? 0}</p>
-          </Card>
-        ))}
-      </div>
-      <div className="grid min-w-0 gap-4 lg:grid-cols-3">
-        <SummaryCard title="Lead Status Summary" rows={(data?.leadStatuses ?? []).map((row) => [row.status, row._count])} />
-        <SummaryCard title="Call Status Summary" rows={(data?.callStatuses ?? []).map((row) => [row.status, row._count])} />
-        <SummaryCard title="Call Stage Summary" rows={(data?.callStages ?? []).map((row) => [row.callStage, row._count])} />
-      </div>
+      {loading && !data ? <MetricSkeletonGrid count={6} /> : (
+        <div className="grid min-w-0 gap-4 md:grid-cols-3 xl:grid-cols-6">
+          {cards.map(([name, value]) => (
+            <Card key={String(name)}>
+              <p className="text-xs font-bold uppercase text-slate-500">{name}</p>
+              <p className="mt-2 text-3xl font-black">{value ?? 0}</p>
+            </Card>
+          ))}
+        </div>
+      )}
+      {loading && !data ? <SummarySkeletonGrid /> : (
+        <div className="grid min-w-0 gap-4 lg:grid-cols-3">
+          <SummaryCard title="Lead Status Summary" rows={(data?.leadStatuses ?? []).map((row) => [row.status, row._count])} />
+          <SummaryCard title="Call Status Summary" rows={(data?.callStatuses ?? []).map((row) => [row.status, row._count])} />
+          <SummaryCard title="Call Stage Summary" rows={(data?.callStages ?? []).map((row) => [row.callStage, row._count])} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SummarySkeletonGrid() {
+  return (
+    <div className="grid min-w-0 gap-4 lg:grid-cols-3">
+      {Array.from({ length: 3 }).map((_, index) => (
+        <Card key={index}>
+          <Skeleton className="mb-5 h-5 w-40" />
+          <div className="grid gap-3">
+            <Skeleton className="h-6 w-full" />
+            <Skeleton className="h-6 w-5/6" />
+            <Skeleton className="h-6 w-2/3" />
+          </div>
+        </Card>
+      ))}
     </div>
   );
 }
@@ -176,7 +202,7 @@ function SummaryCard({ title, rows }: { title: string; rows: Array<[string, numb
 }
 
 export function UsersPage({ roleFilter }: { roleFilter?: Role }) {
-  const { data, error, reload } = useLoad<User[]>(`/users${roleFilter ? `?role=${roleFilter}` : ''}`);
+  const { data, error, loading, reload } = useLoad<User[]>(`/users${roleFilter ? `?role=${roleFilter}` : ''}`);
   const [form, setForm] = useState({ name: '', email: '', role: roleFilter ?? 'BD' });
   const users = data ?? [];
   const userPagination = usePagination(users);
@@ -205,7 +231,7 @@ export function UsersPage({ roleFilter }: { roleFilter?: Role }) {
         </form>
       </Card>
       {error ? <Card className="text-sm font-semibold text-red-700">{error}</Card> : null}
-      <Card className="p-0">
+      {loading && !data ? <TableSkeleton columns={5} /> : <Card className="p-0">
         <div className="table-wrap">
           <table className="lead-table">
             <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead>
@@ -242,13 +268,13 @@ export function UsersPage({ roleFilter }: { roleFilter?: Role }) {
           </table>
         </div>
         <PaginationControls {...userPagination} />
-      </Card>
+      </Card>}
     </div>
   );
 }
 
 export function JobsPage({ bdMode = false }: { bdMode?: boolean }) {
-  const { data, error, reload } = useLoad<Job[]>('/jobs');
+  const { data, error, loading, reload } = useLoad<Job[]>('/jobs');
   const { data: techStacks } = useLoad<TechStack[]>('/tech-stacks', bdMode);
   const [form, setForm] = useState({ platform: '', companyName: '', techStack: '', jobLink: '', jobDescription: '' });
   const appliedToday = useMemo(() => (data ?? []).filter((job) => job.status === 'APPLIED' && new Date(job.dateAdded).toDateString() === new Date().toDateString()).length, [data]);
@@ -280,13 +306,15 @@ export function JobsPage({ bdMode = false }: { bdMode?: boolean }) {
           </form>
         </Card>
       ) : null}
-      <div className="grid min-w-0 gap-4 md:grid-cols-3">
-        <Card><p className="text-xs font-bold uppercase text-slate-500">Total Jobs</p><p className="mt-2 text-3xl font-black">{data?.length ?? 0}</p></Card>
-        <Card><p className="text-xs font-bold uppercase text-slate-500">Applied Today</p><p className="mt-2 text-3xl font-black">{appliedToday}</p></Card>
-        <Card><p className="text-xs font-bold uppercase text-slate-500">Not Applied</p><p className="mt-2 text-3xl font-black">{(data ?? []).filter((job) => job.status === 'NOT_APPLIED').length}</p></Card>
-      </div>
+      {loading && !data ? <MetricSkeletonGrid count={3} /> : (
+        <div className="grid min-w-0 gap-4 md:grid-cols-3">
+          <Card><p className="text-xs font-bold uppercase text-slate-500">Total Jobs</p><p className="mt-2 text-3xl font-black">{data?.length ?? 0}</p></Card>
+          <Card><p className="text-xs font-bold uppercase text-slate-500">Applied Today</p><p className="mt-2 text-3xl font-black">{appliedToday}</p></Card>
+          <Card><p className="text-xs font-bold uppercase text-slate-500">Not Applied</p><p className="mt-2 text-3xl font-black">{(data ?? []).filter((job) => job.status === 'NOT_APPLIED').length}</p></Card>
+        </div>
+      )}
       {error ? <Card className="text-sm font-semibold text-red-700">{error}</Card> : null}
-      <Card className="p-0"><JobsTable jobs={data ?? []} reload={reload} canApply={bdMode} /></Card>
+      {loading && !data ? <TableSkeleton columns={8} /> : <Card className="p-0"><JobsTable jobs={data ?? []} reload={reload} canApply={bdMode} /></Card>}
     </div>
   );
 }
@@ -371,13 +399,13 @@ export function LeadSubmissionPage() {
 
 export function LeadsPage({ status, mode = 'list' }: { status?: LeadStatus; mode?: 'list' | 'approvals' | 'schedule' | 'calendar' | 'feedback' }) {
   const path = `${mode === 'schedule' ? '/bd/leads' : '/leads'}${status ? `?status=${status}` : ''}`;
-  const { data, error, reload } = useLoad<Lead[]>(path);
+  const { data, error, loading, reload } = useLoad<Lead[]>(path);
   const leads = data ?? [];
   const leadPagination = usePagination(leads);
   return (
     <div className="grid min-w-0 gap-5">
       {error ? <Card className="text-sm font-semibold text-red-700">{error}</Card> : null}
-      <Card className="p-0">
+      {loading && !data ? <TableSkeleton columns={8} /> : <Card className="p-0">
         <div className="table-wrap">
           <table className="lead-table">
             <thead><tr><th>Lead</th><th>Stack</th><th>Created BD</th><th>Assigned BD</th><th>Status</th><th>Calls</th><th>Details</th><th>Actions</th></tr></thead>
@@ -400,7 +428,7 @@ export function LeadsPage({ status, mode = 'list' }: { status?: LeadStatus; mode
           </table>
         </div>
         <PaginationControls {...leadPagination} />
-      </Card>
+      </Card>}
     </div>
   );
 }
@@ -481,9 +509,10 @@ function ScheduleCallForm({ leadId, compact = false, onSaved }: { leadId: string
 
 export function LeadDetailPage({ role, id }: { role: 'admin' | 'bd'; id: string }) {
   const endpoint = role === 'admin' ? `/admin/leads/${id}` : `/bd/leads/${id}`;
-  const { data: lead, error, reload } = useLoad<Lead>(endpoint);
+  const { data: lead, error, loading, reload } = useLoad<Lead>(endpoint);
   if (error) return <Card className="text-sm font-semibold text-red-700">{error}</Card>;
-  if (!lead) return <Card>Loading lead...</Card>;
+  if (loading && !lead) return <DetailSkeleton />;
+  if (!lead) return <Card>No lead found.</Card>;
   return (
     <div className="grid min-w-0 gap-5">
       <Card>
@@ -625,13 +654,13 @@ function ManualInviteAction({ call, reload }: { call: LeadCall; reload: () => Pr
 
 export function CallsPage({ role }: { role: Role }) {
   const endpoint = role === 'SUPER_ADMIN' ? '/admin/calls' : role === 'BD' ? '/bd/calls' : '/closer/calls';
-  const { data, error, reload } = useLoad<LeadCall[]>(endpoint);
+  const { data, error, loading, reload } = useLoad<LeadCall[]>(endpoint);
   const calls = data ?? [];
   const callPagination = usePagination(calls);
   return (
     <div className="grid min-w-0 gap-5">
       {error ? <Card className="text-sm font-semibold text-red-700">{error}</Card> : null}
-      <Card className="p-0">
+      {loading && !data ? <TableSkeleton columns={8} /> : <Card className="p-0">
         <div className="table-wrap">
           <table className="lead-table">
             <thead><tr><th>Lead</th><th>#</th><th>Stage</th><th>Scheduled</th><th>Closer</th><th>Status</th><th>Feedback</th><th>Details</th></tr></thead>
@@ -652,7 +681,7 @@ export function CallsPage({ role }: { role: Role }) {
           </table>
         </div>
         <PaginationControls {...callPagination} />
-      </Card>
+      </Card>}
     </div>
   );
 }
@@ -662,9 +691,10 @@ export function FeedbackPage() {
 }
 
 export function CloserCallDetailPage({ id }: { id: string }) {
-  const { data: call, error, reload } = useLoad<LeadCall>(`/closer/calls/${id}`);
+  const { data: call, error, loading, reload } = useLoad<LeadCall>(`/closer/calls/${id}`);
   if (error) return <Card className="text-sm font-semibold text-red-700">{error}</Card>;
-  if (!call) return <Card>Loading call...</Card>;
+  if (loading && !call) return <DetailSkeleton />;
+  if (!call) return <Card>No call found.</Card>;
   return (
     <div className="grid min-w-0 gap-5">
       <Card>
@@ -722,7 +752,7 @@ function CallFeedbackForm({ callId, onSaved }: { callId: string; onSaved: () => 
 }
 
 export function TechStacksPage() {
-  const { data, error, reload } = useLoad<TechStack[]>('/tech-stacks');
+  const { data, error, loading, reload } = useLoad<TechStack[]>('/tech-stacks');
   const [form, setForm] = useState({ name: '', description: '' });
   const stacks = data ?? [];
   const stackPagination = usePagination(stacks);
@@ -743,7 +773,7 @@ export function TechStacksPage() {
         </form>
       </Card>
       {error ? <Card className="text-sm font-semibold text-red-700">{error}</Card> : null}
-      <Card className="p-0">
+      {loading && !data ? <TableSkeleton columns={4} /> : <Card className="p-0">
         <div className="table-wrap">
           <table className="lead-table">
             <thead><tr><th>Name</th><th>Description</th><th>Status</th><th>Actions</th></tr></thead>
@@ -763,15 +793,16 @@ export function TechStacksPage() {
           </table>
         </div>
         <PaginationControls {...stackPagination} />
-      </Card>
+      </Card>}
     </div>
   );
 }
 
 export function AuditLogsPage() {
-  const { data, error } = useLoad<Array<{ id: string; action: string; entityType: string; entityId?: string; createdAt: string; actor?: User }>>('/audit-logs');
+  const { data, error, loading } = useLoad<Array<{ id: string; action: string; entityType: string; entityId?: string; createdAt: string; actor?: User }>>('/audit-logs');
   const logs = data ?? [];
   const logPagination = usePagination(logs);
+  if (loading && !data) return <TableSkeleton columns={4} />;
   return (
     <Card className="p-0">
       {error ? <p className="p-4 text-sm font-semibold text-red-700">{error}</p> : null}

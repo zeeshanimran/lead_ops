@@ -71,7 +71,8 @@ async function sendApiRequest(path: string, requestOptions: RequestInit, accessT
 }
 
 function apiUrl() {
-  const value = typeof window !== 'undefined' ? window.__LEADOPS_CONFIG__?.apiUrl : process.env.NEXT_PUBLIC_API_URL;
+  const runtimeValue = typeof window !== 'undefined' ? window.__LEADOPS_CONFIG__?.apiUrl : undefined;
+  const value = runtimeValue || process.env.NEXT_PUBLIC_API_URL;
   if (!value) throw new Error('API URL is required');
   return value.replace(/\/$/, '');
 }
