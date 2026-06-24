@@ -59,6 +59,7 @@ services:
       SES_FROM_EMAIL: ${SES_FROM_EMAIL:?SES_FROM_EMAIL is required}
       RUN_MIGRATIONS: ${RUN_MIGRATIONS:?RUN_MIGRATIONS is required}
       SEED_ON_START: ${SEED_ON_START:?SEED_ON_START is required}
+      ENABLE_API_DOCS: ${ENABLE_API_DOCS:-false}
     depends_on:
       postgres:
         condition: service_healthy

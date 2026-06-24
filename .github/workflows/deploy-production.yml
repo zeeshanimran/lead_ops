@@ -159,6 +159,7 @@ jobs:
           SES_FROM_EMAIL=${{ secrets.SES_FROM_EMAIL }}
           RUN_MIGRATIONS=${{ secrets.RUN_MIGRATIONS }}
           SEED_ON_START=${{ secrets.SEED_ON_START }}
+          ENABLE_API_DOCS=${{ secrets.ENABLE_API_DOCS }}
           EOF
           sed -i 's/^ *//' /tmp/leadops.env.production
           scp -i ~/.ssh/ec2_key /tmp/leadops.env.production "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:${{ secrets.EC2_APP_DIR }}/.env.production"
