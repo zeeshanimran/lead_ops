@@ -23,6 +23,12 @@ import { FormEvent } from 'react';
 import { api, getSession, roleHome, setSession, type Session } from '@/lib/api';
 import { Button, Card, Field, inputClass, Skeleton } from './ui';
 
+type DashboardBadgeReport = {
+  totals: {
+    pendingApprovals: number;
+  };
+};
+
 const nav = {
   SUPER_ADMIN: [
     ['/admin/dashboard', 'Dashboard', LayoutDashboard],
@@ -33,6 +39,7 @@ const nav = {
     ['/admin/pending-approvals', 'Pending Approvals', ClipboardCheck],
     ['/admin/schedule-ready', 'Schedule Ready', CalendarClock],
     ['/admin/lead-progress', 'Lead Progress', FileCheck2],
+    ['/admin/calls', 'Calls', MessageSquareText],
     ['/admin/reports', 'Reports', BarChart3],
     ['/admin/audit-logs', 'Audit Logs', ShieldCheck],
   ],
@@ -57,6 +64,7 @@ export function AppShell({ children, role }: { children: ReactNode; role: Sessio
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -104,6 +112,47 @@ export function AppShell({ children, role }: { children: ReactNode; role: Sessio
     }
   }, [pathname, session]);
 
+  useEffect(() => {
+    let cancelled = false;
+    if (!session || role !== 'SUPER_ADMIN') {
+      setPendingApprovalCount(0);
+      return;
+    }
+
+    async function loadPendingApprovals() {
+      try {
+        const report = await api<DashboardBadgeReport>('/reports/dashboard', { suppressToast: true });
+        if (!cancelled) setPendingApprovalCount(report.totals.pendingApprovals);
+      } catch {
+        if (!cancelled) setPendingApprovalCount(0);
+      }
+    }
+
+    void loadPendingApprovals();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pathname, role, session]);
+
+  useEffect(() => {
+    if (!session || role !== 'SUPER_ADMIN') return;
+    const socket = new WebSocket(pendingApprovalsSocketUrl(session.accessToken));
+    socket.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data) as { type?: string; count?: number };
+        if (payload.type === 'pendingApprovals' && typeof payload.count === 'number') {
+          setPendingApprovalCount(payload.count);
+        }
+      } catch {
+        // Ignore malformed websocket messages; the REST fallback still keeps the badge usable.
+      }
+    };
+    return () => {
+      socket.close();
+    };
+  }, [role, session]);
+
   const title = useMemo(() => nav[role].find(([href]) => href === pathname)?.[1] ?? 'LeadOps CRM', [pathname, role]);
   useEffect(() => {
     setMobileNavOpen(false);
@@ -125,6 +174,7 @@ export function AppShell({ children, role }: { children: ReactNode; role: Sessio
         <nav className="grid gap-1">
           {nav[role].map(([href, labelText, Icon]) => {
             const active = pathname === href;
+            const badge = role === 'SUPER_ADMIN' && href === '/admin/pending-approvals' ? pendingApprovalCount : 0;
             return (
               <Link
                 key={href}
@@ -134,7 +184,8 @@ export function AppShell({ children, role }: { children: ReactNode; role: Sessio
                 }`}
               >
                 <Icon size={17} />
-                {labelText}
+                <span className="min-w-0 flex-1 truncate">{labelText}</span>
+                {badge > 0 ? <span className="rounded-full bg-brand-red px-2 py-0.5 text-xs font-black text-white">{badge}</span> : null}
               </Link>
             );
           })}
@@ -215,6 +266,7 @@ export function AppShell({ children, role }: { children: ReactNode; role: Sessio
             <nav className="grid gap-1">
               {nav[role].map(([href, labelText, Icon]) => {
                 const active = pathname === href;
+                const badge = role === 'SUPER_ADMIN' && href === '/admin/pending-approvals' ? pendingApprovalCount : 0;
                 return (
                   <Link
                     key={href}
@@ -224,7 +276,8 @@ export function AppShell({ children, role }: { children: ReactNode; role: Sessio
                     }`}
                   >
                     <Icon size={17} />
-                    {labelText}
+                    <span className="min-w-0 flex-1 truncate">{labelText}</span>
+                    {badge > 0 ? <span className="rounded-full bg-brand-red px-2 py-0.5 text-xs font-black text-white">{badge}</span> : null}
                   </Link>
                 );
               })}
@@ -246,6 +299,14 @@ export function AppShell({ children, role }: { children: ReactNode; role: Sessio
       ) : null}
     </div>
   );
+}
+
+function pendingApprovalsSocketUrl(accessToken: string) {
+  const configuredApiUrl =
+    (typeof window !== 'undefined' ? window.__LEADOPS_CONFIG__?.apiUrl : undefined) || process.env.NEXT_PUBLIC_API_URL || '';
+  const apiRoot = configuredApiUrl.replace(/\/api\/?$/, '').replace(/\/$/, '');
+  const wsRoot = apiRoot.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:');
+  return `${wsRoot}/ws/pending-approvals?token=${encodeURIComponent(accessToken)}`;
 }
 
 function AppShellSkeleton() {

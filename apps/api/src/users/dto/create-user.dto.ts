@@ -1,6 +1,6 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
-import { IsEmail, IsIn, IsString } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsEmail, IsIn, IsOptional, IsString } from 'class-validator';
 
 export class CreateUserDto {
   @ApiProperty()
@@ -14,4 +14,11 @@ export class CreateUserDto {
   @ApiProperty({ enum: [Role.BD, Role.CLOSER] })
   @IsIn([Role.BD, Role.CLOSER])
   role!: Extract<Role, 'BD' | 'CLOSER'>;
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(3)
+  @IsString({ each: true })
+  techStackIds?: string[];
 }

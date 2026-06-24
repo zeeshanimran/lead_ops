@@ -12,6 +12,10 @@ body {
   overflow-x: hidden;
 }
 
+html {
+  font-size: 15px;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -39,22 +43,22 @@ textarea {
 
 .lead-table {
   width: 100%;
-  min-width: 760px;
+  min-width: 720px;
   border-collapse: collapse;
 }
 
 .lead-table th,
 .lead-table td {
   border-bottom: 1px solid #e5e7eb;
-  padding: 12px;
+  padding: 9px 10px;
   text-align: left;
   vertical-align: middle;
-  font-size: 13px;
+  font-size: 12px;
   white-space: nowrap;
 }
 
 .lead-table td {
-  max-width: 280px;
+  max-width: 240px;
 }
 
 .lead-table td:first-child,
@@ -68,7 +72,7 @@ textarea {
   z-index: 1;
   background: #f9fafb;
   color: #475569;
-  font-size: 11px;
+  font-size: 10px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
@@ -79,12 +83,12 @@ textarea {
   }
 
   .lead-table {
-    min-width: 680px;
+    min-width: 640px;
   }
 
   .lead-table th,
   .lead-table td {
-    padding: 10px;
-    font-size: 12px;
+    padding: 8px;
+    font-size: 11px;
   }
 }

@@ -1,0 +1,5 @@
+ALTER TYPE "JobStatus" ADD VALUE 'REJECTED';
+
+ALTER TABLE "Job"
+ADD COLUMN "adminNotes" TEXT,
+ADD COLUMN "rejectionReason" TEXT;

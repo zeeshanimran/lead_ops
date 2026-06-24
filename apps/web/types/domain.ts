@@ -1,6 +1,6 @@
 export type Role = 'SUPER_ADMIN' | 'BD' | 'CLOSER';
 export type UserStatus = 'ACTIVE' | 'INACTIVE';
-export type JobStatus = 'NOT_APPLIED' | 'APPLIED';
+export type JobStatus = 'PENDING_APPROVAL' | 'APPROVED_BY_ADMIN' | 'REJECTED_BY_ADMIN' | 'NOT_APPLIED' | 'APPLIED' | 'REJECTED';
 export type LeadStatus =
   | 'PENDING_APPROVAL'
   | 'APPROVED'
@@ -24,6 +24,7 @@ export type User = {
   email: string;
   role: Role;
   status: UserStatus;
+  assignedTechStacks?: TechStack[];
 };
 
 export type TechStack = {
@@ -44,6 +45,8 @@ export type Job = {
   jobLink: string;
   jobDescription: string;
   status: JobStatus;
+  adminNotes?: string;
+  rejectionReason?: string;
   bd?: User;
 };
 

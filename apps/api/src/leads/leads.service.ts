@@ -4,6 +4,7 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { AuthenticatedUser } from '../common/types/authenticated-user';
 import { EmailService } from '../email/email.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { PendingApprovalsGateway } from '../realtime/pending-approvals.gateway';
 import { ApprovalDto } from './dto/approval.dto';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { ManualCalendarDto } from './dto/manual-calendar.dto';
@@ -15,7 +16,7 @@ const includeLead = {
   createdByBd: { select: publicUser },
   assignedBd: { select: publicUser },
   approvedByAdmin: { select: publicUser },
-  job: true,
+  job: { include: { bd: { select: publicUser } } },
   techStack: true,
   calls: {
     orderBy: [{ callNumber: 'asc' as const }],
@@ -33,7 +34,7 @@ const includeCall = {
     include: {
       createdByBd: { select: publicUser },
       assignedBd: { select: publicUser },
-      job: true,
+      job: { include: { bd: { select: publicUser } } },
       techStack: true,
     },
   },
@@ -48,6 +49,7 @@ export class LeadsService {
     private readonly prisma: PrismaService,
     private readonly auditLogs: AuditLogsService,
     private readonly email: EmailService,
+    private readonly pendingApprovals: PendingApprovalsGateway,
   ) {}
 
   findAll(user: AuthenticatedUser, status?: LeadStatus) {
@@ -64,11 +66,12 @@ export class LeadsService {
     });
   }
 
-  findBdLeads(bdId: string, status?: LeadStatus) {
+  async findBdLeads(bdId: string, status?: LeadStatus) {
+    const assignedStackIds = await this.assignedTechStackIds(bdId);
     return this.prisma.lead.findMany({
       where: {
         ...(status ? { status } : {}),
-        OR: [{ createdByBdId: bdId }, { assignedBdId: bdId }],
+        techStackId: { in: assignedStackIds },
       },
       orderBy: { createdAt: 'desc' },
       include: includeLead,
@@ -93,8 +96,9 @@ export class LeadsService {
   }
 
   async findBdLead(bdId: string, id: string) {
+    const assignedStackIds = await this.assignedTechStackIds(bdId);
     const lead = await this.prisma.lead.findFirst({
-      where: { id, OR: [{ createdByBdId: bdId }, { assignedBdId: bdId }] },
+      where: { id, techStackId: { in: assignedStackIds } },
       include: includeLead,
     });
     if (!lead) throw new NotFoundException('Lead not found');
@@ -104,12 +108,12 @@ export class LeadsService {
   async create(user: AuthenticatedUser, dto: CreateLeadDto) {
     if (user.role !== Role.BD) throw new ForbiddenException('Only BD users can submit leads');
     const stack = await this.prisma.techStack.findFirst({
-      where: { id: dto.techStackId, isActive: true },
+      where: { id: dto.techStackId, isActive: true, assignedBds: { some: { id: user.sub } } },
     });
-    if (!stack) throw new BadRequestException('Select an active tech stack');
+    if (!stack) throw new BadRequestException('Select a tech stack assigned to this BD');
     if (dto.jobId) {
-      const job = await this.prisma.job.findFirst({ where: { id: dto.jobId, bdUserId: user.sub } });
-      if (!job) throw new BadRequestException('Related job does not belong to this BD');
+      const job = await this.prisma.job.findFirst({ where: { id: dto.jobId, techStack: stack.name } });
+      if (!job) throw new BadRequestException('Related job must belong to the selected tech stack');
     }
 
     const lead = await this.prisma.lead.create({
@@ -126,6 +130,7 @@ export class LeadsService {
     }
     await this.notifyLeadSubmitted(lead);
     await this.auditLogs.write(user.sub, 'LEAD_CREATED', 'Lead', lead.id);
+    await this.pendingApprovals.broadcastPendingApprovals();
     return lead;
   }
 
@@ -137,9 +142,15 @@ export class LeadsService {
     if (!existing) throw new NotFoundException('Lead not found');
     const assignedBdId = dto.assignedBdId ?? existing.createdByBdId;
     const assignedBd = await this.prisma.user.findFirst({
-      where: { id: assignedBdId, role: Role.BD, status: 'ACTIVE', deletedAt: null },
+      where: {
+        id: assignedBdId,
+        role: Role.BD,
+        status: 'ACTIVE',
+        deletedAt: null,
+        assignedTechStacks: { some: { id: existing.techStackId } },
+      },
     });
-    if (!assignedBd) throw new BadRequestException('Assign the lead to an active BD');
+    if (!assignedBd) throw new BadRequestException('Assign the lead to an active BD with this tech stack');
 
     const lead = await this.prisma.lead.update({
       where: { id },
@@ -162,6 +173,7 @@ export class LeadsService {
     });
     await this.auditLogs.write(actorId, 'LEAD_APPROVED', 'Lead', id, { assignedBdId });
     await this.notifyBdLeadDecision(lead, assignedBd.email, 'APPROVED');
+    await this.pendingApprovals.broadcastPendingApprovals();
     return lead;
   }
 
@@ -171,16 +183,19 @@ export class LeadsService {
       dismissalReason: dto.reason ?? dto.notes,
     });
     await this.notifyBdLeadDecision(lead, lead.assignedBd?.email ?? lead.createdByBd.email, 'DISMISSED');
+    await this.pendingApprovals.broadcastPendingApprovals();
     return lead;
   }
 
-  reopen(actorId: string, id: string, dto: ApprovalDto) {
-    return this.transition(actorId, id, LeadStatus.PENDING_APPROVAL, 'LEAD_REOPENED', 'Lead reopened for review', {
+  async reopen(actorId: string, id: string, dto: ApprovalDto) {
+    const lead = await this.transition(actorId, id, LeadStatus.PENDING_APPROVAL, 'LEAD_REOPENED', 'Lead reopened for review', {
       adminNotes: dto.notes,
       dismissalReason: null,
       approvedAt: null,
       approvedByAdmin: { disconnect: true },
     });
+    await this.pendingApprovals.broadcastPendingApprovals();
+    return lead;
   }
 
   addNotes(actorId: string, id: string, dto: ApprovalDto) {
@@ -188,14 +203,33 @@ export class LeadsService {
   }
 
   async schedule(user: AuthenticatedUser, id: string, dto: ScheduleLeadDto) {
-    if (user.role !== Role.BD) throw new ForbiddenException('Only BD users can schedule calls');
+    if (user.role !== Role.SUPER_ADMIN) throw new ForbiddenException('Only Admin users can schedule calls');
     const closer = await this.prisma.user.findFirst({
-      where: { id: dto.closerId, role: Role.CLOSER, status: 'ACTIVE', deletedAt: null },
+      where: {
+        id: dto.closerId,
+        role: Role.CLOSER,
+        status: 'ACTIVE',
+        deletedAt: null,
+      },
     });
     if (!closer) throw new BadRequestException('Active closer is required');
-    const lead = await this.prisma.lead.findUnique({ where: { id }, include: { calls: true } });
+    const lead = await this.prisma.lead.findUnique({
+      where: { id },
+      include: {
+        calls: true,
+        createdByBd: { select: publicUser },
+        assignedBd: { select: publicUser },
+      },
+    });
     if (!lead) throw new NotFoundException('Lead not found');
-    if (lead.assignedBdId !== user.sub) throw new ForbiddenException('Lead is not assigned to this BD');
+    const bdOwner = lead.assignedBd ?? lead.createdByBd;
+    if (!bdOwner) throw new BadRequestException('Lead does not have a BD owner');
+    if (!(await this.hasAssignedTechStack(dto.closerId, lead.techStackId))) {
+      throw new BadRequestException('Assign a closer with this tech stack');
+    }
+    if (!(await this.hasAssignedTechStack(bdOwner.id, lead.techStackId))) {
+      throw new BadRequestException('Assigned BD must have this tech stack');
+    }
     const schedulableStatuses: LeadStatus[] = [
       LeadStatus.READY_TO_SCHEDULE,
       LeadStatus.NEXT_CALL_REQUIRED,
@@ -214,7 +248,7 @@ export class LeadsService {
           leadId: id,
           callNumber,
           callStage: dto.callStage,
-          scheduledByBdId: user.sub,
+          scheduledByBdId: bdOwner.id,
           closerId: dto.closerId,
           scheduledAt,
           manualInviteStatus: dto.manualInviteStatus ?? ManualInviteStatus.MANUAL_INVITE_PENDING,
@@ -236,8 +270,8 @@ export class LeadsService {
           leadId: id,
           actorId: user.sub,
           action: 'CALL_SCHEDULED',
-          description: `Call #${callNumber} (${labelStage(dto.callStage)}) scheduled with ${closer.name}`,
-          metadata: { callId: call.id, closerId: dto.closerId, scheduledAt: scheduledAt.toISOString() },
+          description: `Admin scheduled Call #${callNumber} (${labelStage(dto.callStage)}) with ${closer.name}`,
+          metadata: { callId: call.id, closerId: dto.closerId, scheduledAt: scheduledAt.toISOString(), bdOwnerId: bdOwner.id },
         },
       });
       await tx.leadTimeline.create({
@@ -245,15 +279,16 @@ export class LeadsService {
           leadId: id,
           actorId: user.sub,
           action: 'CLOSER_ASSIGNED',
-          description: `${closer.name} assigned to call #${callNumber}`,
+          description: `${closer.name} assigned to call #${callNumber} by Admin`,
           metadata: { callId: call.id, closerId: dto.closerId, callStage: dto.callStage },
         },
       });
       return call;
     });
 
-    await this.auditLogs.write(user.sub, 'CALL_SCHEDULED', 'LeadCall', result.id, { leadId: id, closerId: dto.closerId });
+    await this.auditLogs.write(user.sub, 'CALL_SCHEDULED', 'LeadCall', result.id, { leadId: id, closerId: dto.closerId, bdOwnerId: bdOwner.id });
     await this.notifyCallScheduled(result);
+    await this.notifyBdCallScheduled(result);
     await this.email.sendCallAssignment({
       closerEmail: closer.email,
       closerName: closer.name,
@@ -339,10 +374,10 @@ export class LeadsService {
       include: { lead: true },
     });
     if (!call) throw new NotFoundException('Call not found');
-    if (user.role === Role.BD && call.scheduledByBdId !== user.sub) {
-      throw new ForbiddenException('Cannot update another BD call');
+    if (user.role === Role.BD && !(await this.hasAssignedTechStack(user.sub, call.lead.techStackId))) {
+      throw new ForbiddenException('Call is outside assigned tech stacks');
     }
-    if (user.role === Role.CLOSER) throw new ForbiddenException('Closers cannot update manual invites');
+    if (user.role === Role.CLOSER) throw new ForbiddenException('Closers cannot update client responses');
 
     const updated = await this.prisma.leadCall.update({
       where: { id: dto.leadCallId },
@@ -353,11 +388,11 @@ export class LeadsService {
       },
       include: includeCall,
     });
-    await this.writeTimeline(id, user.sub, 'MANUAL_INVITE_UPDATED', `Manual invite marked ${labelStatus(dto.manualInviteStatus)}`, {
+    await this.writeTimeline(id, user.sub, 'CLIENT_RESPONSE_UPDATED', `Client response marked ${clientResponseLabel(dto.manualInviteStatus)}`, {
       callId: dto.leadCallId,
       manualInviteStatus: dto.manualInviteStatus,
     });
-    await this.auditLogs.write(user.sub, 'MANUAL_INVITE_UPDATED', 'LeadCall', dto.leadCallId, { leadId: id });
+    await this.auditLogs.write(user.sub, 'CLIENT_RESPONSE_UPDATED', 'LeadCall', dto.leadCallId, { leadId: id });
     await this.notifyManualInviteUpdated(updated);
     return updated;
   }
@@ -368,7 +403,7 @@ export class LeadsService {
         user.role === Role.SUPER_ADMIN
           ? {}
           : user.role === Role.BD
-            ? { scheduledByBdId: user.sub }
+            ? { lead: { techStack: { assignedBds: { some: { id: user.sub } } } } }
             : { closerId: user.sub },
       orderBy: { scheduledAt: 'desc' },
       include: includeCall,
@@ -416,6 +451,21 @@ export class LeadsService {
     });
   }
 
+  private async assignedTechStackIds(bdId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: bdId },
+      select: { assignedTechStacks: { where: { isActive: true }, select: { id: true } } },
+    });
+    return user?.assignedTechStacks.map((stack) => stack.id) ?? [];
+  }
+
+  private async hasAssignedTechStack(bdId: string, techStackId: string) {
+    const count = await this.prisma.techStack.count({
+      where: { id: techStackId, isActive: true, assignedBds: { some: { id: bdId } } },
+    });
+    return count > 0;
+  }
+
   private async notifyLeadSubmitted(lead: Prisma.LeadGetPayload<{ include: typeof includeLead }>) {
     const superAdmins = await this.prisma.user.findMany({
       where: { role: Role.SUPER_ADMIN, status: 'ACTIVE', deletedAt: null },
@@ -455,6 +505,44 @@ export class LeadsService {
     });
     await this.email.sendAdminCallScheduled({
       to: superAdmins.map((admin) => admin.email),
+      leadId: call.leadId,
+      closerEmail: call.closer.email,
+      closerName: call.closer.name,
+      bdName: call.scheduledByBd.name,
+      bdEmail: call.scheduledByBd.email,
+      callId: call.id,
+      callNumber: call.callNumber,
+      callStage: call.callStage,
+      scheduledAt: call.scheduledAt,
+      manualInviteStatus: call.manualInviteStatus,
+      manualInviteLink: call.manualInviteLink,
+      bdNotes: call.bdNotes,
+      lead: {
+        companyName: call.lead.companyName,
+        profileName: call.lead.profileName,
+        nature: call.lead.nature,
+        techStackName: call.lead.techStack.name,
+        payrate: call.lead.payrate,
+        proofType: call.lead.proofType,
+        proofNotes: call.lead.proofNotes,
+        proofUrl: call.lead.proofUrl,
+        resumeUrl: call.lead.resumeUrl,
+        adminNotes: call.lead.adminNotes,
+        job: call.lead.job
+          ? {
+              jobId: call.lead.job.jobId,
+              platform: call.lead.job.platform,
+              companyName: call.lead.job.companyName,
+              jobLink: call.lead.job.jobLink,
+              jobDescription: call.lead.job.jobDescription,
+            }
+          : null,
+      },
+    });
+  }
+
+  private async notifyBdCallScheduled(call: Prisma.LeadCallGetPayload<{ include: typeof includeCall }>) {
+    await this.email.sendBdCallScheduled({
       leadId: call.leadId,
       closerEmail: call.closer.email,
       closerName: call.closer.name,
@@ -594,4 +682,13 @@ function labelStage(stage: CallStage) {
 
 function labelStatus(status: string) {
   return status.toLowerCase().replace(/_/g, ' ');
+}
+
+function clientResponseLabel(status: string) {
+  if (status === 'MANUAL_INVITE_PENDING') return 'awaiting client response';
+  if (status === 'MANUAL_INVITE_CREATED') return 'client response requested';
+  if (status === 'ACCEPTED') return 'client accepted';
+  if (status === 'DECLINED') return 'client declined';
+  if (status === 'REMINDER_DUE') return 'reminder due';
+  return labelStatus(status);
 }

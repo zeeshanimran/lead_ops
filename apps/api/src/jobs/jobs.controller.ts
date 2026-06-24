@@ -7,6 +7,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { AuthenticatedUser } from '../common/types/authenticated-user';
 import { CreateJobDto } from './dto/create-job.dto';
+import { JobDecisionDto } from './dto/job-decision.dto';
 import { JobsService } from './jobs.service';
 
 @ApiBearerAuth()
@@ -28,9 +29,27 @@ export class JobsController {
     return this.jobs.create(user, dto);
   }
 
-  @Patch(':id/apply')
-  @Roles(Role.BD, Role.SUPER_ADMIN)
-  apply(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
-    return this.jobs.apply(user, id);
+  @Patch(':id/approve')
+  @Roles(Role.SUPER_ADMIN)
+  approve(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() dto: JobDecisionDto) {
+    return this.jobs.approve(user.sub, id, dto);
+  }
+
+  @Patch(':id/reject')
+  @Roles(Role.SUPER_ADMIN)
+  reject(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() dto: JobDecisionDto) {
+    return this.jobs.reject(user.sub, id, dto);
+  }
+
+  @Patch(':id/reopen')
+  @Roles(Role.SUPER_ADMIN)
+  reopen(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() dto: JobDecisionDto) {
+    return this.jobs.reopen(user.sub, id, dto);
+  }
+
+  @Patch(':id/notes')
+  @Roles(Role.SUPER_ADMIN)
+  addNotes(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() dto: JobDecisionDto) {
+    return this.jobs.addNotes(user.sub, id, dto);
   }
 }

@@ -21,8 +21,12 @@ enum UserStatus {
 }
 
 enum JobStatus {
+  PENDING_APPROVAL
+  APPROVED_BY_ADMIN
+  REJECTED_BY_ADMIN
   NOT_APPLIED
   APPLIED
+  REJECTED
 }
 
 enum LeadNature {
@@ -129,6 +133,7 @@ model User {
   callFeedback         CallFeedback[]
   leadTimeline         LeadTimeline[]
   auditLogs            AuditLog[]
+  assignedTechStacks   TechStack[] @relation("BdTechStacks")
 }
 
 model Job {
@@ -140,8 +145,10 @@ model Job {
   techStack      String
   jobLink        String
   jobDescription String
-  status         JobStatus @default(NOT_APPLIED)
+  status         JobStatus @default(PENDING_APPROVAL)
   appliedAt      DateTime?
+  adminNotes     String?
+  rejectionReason String?
   bdUserId       String
   bd             User      @relation("BdJobs", fields: [bdUserId], references: [id])
   leads          Lead[]
@@ -160,6 +167,7 @@ model TechStack {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   leads       Lead[]
+  assignedBds User[]   @relation("BdTechStacks")
 }
 
 model Lead {

@@ -49,6 +49,10 @@ type AdminCallScheduledEmailInput = CallAssignmentEmailInput & {
   leadId: string;
 };
 
+type BdCallScheduledEmailInput = CallAssignmentEmailInput & {
+  leadId: string;
+};
+
 type FeedbackSubmittedEmailInput = {
   to: string[];
   leadId: string;
@@ -352,8 +356,8 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
       ['Scheduled time', scheduled],
       ['Scheduled by BD', `${input.bdName} (${input.bdEmail})`],
       ['Assigned closer', input.closerName],
-      ['Manual invite status', label(input.manualInviteStatus)],
-      ['Manual invite link', input.manualInviteLink],
+      ['Client response', clientResponseLabel(input.manualInviteStatus)],
+      ['Response link', input.manualInviteLink],
       ['BD notes', input.bdNotes],
       ['Proof type', label(input.lead.proofType)],
       ['Proof notes', input.lead.proofNotes],
@@ -399,6 +403,63 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  async sendBdCallScheduled(input: BdCallScheduledEmailInput) {
+    const leadUrl = this.bdLeadLink(input.leadId);
+    const scheduled = formatDateTime(input.scheduledAt);
+    const rows: Array<[string, string | undefined | null]> = [
+      ['Lead company', input.lead.companyName],
+      ['Profile', input.lead.profileName],
+      ['Tech stack', input.lead.techStackName],
+      ['Nature', label(input.lead.nature)],
+      ['Payrate', input.lead.payrate],
+      ['Call', `#${input.callNumber} - ${label(input.callStage)}`],
+      ['Scheduled time', scheduled],
+      ['Assigned closer', input.closerName],
+      ['Client response', clientResponseLabel(input.manualInviteStatus)],
+      ['Response link', input.manualInviteLink],
+      ['BD notes', input.bdNotes],
+      ['Admin notes', input.lead.adminNotes],
+    ];
+    const jobRows: Array<[string, string | undefined | null]> = input.lead.job
+      ? [
+          ['Job ID', input.lead.job.jobId],
+          ['Job platform', input.lead.job.platform],
+          ['Job company', input.lead.job.companyName],
+          ['Job link', input.lead.job.jobLink],
+        ]
+      : [];
+
+    return this.send({
+      to: input.bdEmail,
+      subject: `Closer assigned: ${input.lead.companyName} - Call #${input.callNumber}`,
+      text: [
+        `Hi ${input.bdName},`,
+        '',
+        `Admin assigned ${input.closerName} to Call #${input.callNumber} (${label(input.callStage)}) for ${input.lead.companyName}.`,
+        '',
+        ...rows.map(([name, value]) => `${name}: ${value || '-'}`),
+        ...(jobRows.length ? ['', 'Related job:', ...jobRows.map(([name, value]) => `${name}: ${value || '-'}`)] : []),
+        '',
+        `Open lead: ${leadUrl}`,
+      ].join('\n'),
+      html: emailShell({
+        eyebrow: 'Closer assignment',
+        title: `Closer assigned to Call #${input.callNumber}`,
+        content: `
+          <p>Hi ${escapeHtml(input.bdName)},</p>
+          <p>Admin assigned <strong>${escapeHtml(input.closerName)}</strong> to Call #${input.callNumber} (${escapeHtml(label(input.callStage))}) for <strong>${escapeHtml(input.lead.companyName)}</strong>.</p>
+          ${actionButton(leadUrl, 'Open lead')}
+          ${detailsTable(rows)}
+          ${
+            jobRows.length
+              ? `<h3 style="margin:24px 0 8px;font-size:16px;color:#111827;">Related job</h3>${detailsTable(jobRows)}`
+              : ''
+          }
+        `,
+      }),
+    });
+  }
+
   async sendAdminCallAccepted(input: AdminCallScheduledEmailInput) {
     const leadUrl = this.adminLeadLink(input.leadId);
     const rows: Array<[string, string | undefined | null]> = [
@@ -409,8 +470,8 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
       ['Scheduled time', formatDateTime(input.scheduledAt)],
       ['Accepted by closer', input.closerName],
       ['Scheduled by BD', `${input.bdName} (${input.bdEmail})`],
-      ['Manual invite status', label(input.manualInviteStatus)],
-      ['Manual invite link', input.manualInviteLink],
+      ['Client response', clientResponseLabel(input.manualInviteStatus)],
+      ['Response link', input.manualInviteLink],
       ['BD notes', input.bdNotes],
       ['Payrate', input.lead.payrate],
       ['Proof notes', input.lead.proofNotes],
@@ -446,17 +507,17 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
       ['Scheduled time', formatDateTime(input.scheduledAt)],
       ['Scheduled by BD', `${input.bdName} (${input.bdEmail})`],
       ['Assigned closer', input.closerName],
-      ['Manual invite status', label(input.manualInviteStatus)],
-      ['Manual invite link', input.manualInviteLink],
+      ['Client response', clientResponseLabel(input.manualInviteStatus)],
+      ['Response link', input.manualInviteLink],
       ['BD notes', input.bdNotes],
       ['Tech stack', input.lead.techStackName],
       ['Payrate', input.lead.payrate],
     ];
     return this.send({
       to: input.to,
-      subject: `Manual invite updated: Call #${input.callNumber} - ${input.lead.companyName}`,
+      subject: `Client response updated: Call #${input.callNumber} - ${input.lead.companyName}`,
       text: [
-        `${input.bdName} updated the manual invite for Call #${input.callNumber} (${label(input.callStage)}) for ${input.lead.companyName}.`,
+        `${input.bdName} updated the client response for Call #${input.callNumber} (${label(input.callStage)}) for ${input.lead.companyName}.`,
         '',
         ...rows.map(([name, value]) => `${name}: ${value || '-'}`),
         '',
@@ -464,9 +525,9 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
       ].join('\n'),
       html: emailShell({
         eyebrow: 'LeadOps notification',
-        title: `Manual invite updated for Call #${input.callNumber}`,
+        title: `Client response updated for Call #${input.callNumber}`,
         content: `
-          <p style="margin:0 0 18px;"><strong>${escapeHtml(input.bdName)}</strong> updated the manual invite for <strong>${escapeHtml(input.lead.companyName)}</strong>.</p>
+          <p style="margin:0 0 18px;"><strong>${escapeHtml(input.bdName)}</strong> updated the client response for <strong>${escapeHtml(input.lead.companyName)}</strong>.</p>
           ${actionButton(leadUrl, 'Open lead')}
           ${detailsTable(rows)}
         `,
@@ -527,8 +588,8 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
       ['Call', `#${input.callNumber} - ${label(input.callStage)}`],
       ['Scheduled time', scheduled],
       ['BD owner', `${input.bdName} (${input.bdEmail})`],
-      ['Manual invite status', label(input.manualInviteStatus)],
-      ['Manual invite link', input.manualInviteLink],
+      ['Client response', clientResponseLabel(input.manualInviteStatus)],
+      ['Response link', input.manualInviteLink],
       ['BD notes', input.bdNotes],
       ['Proof type', label(input.lead.proofType)],
       ['Proof notes', input.lead.proofNotes],
@@ -736,6 +797,15 @@ function escapeHtml(value: string) {
 
 function label(value: string) {
   return value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function clientResponseLabel(value: string) {
+  if (value === 'MANUAL_INVITE_PENDING') return 'Awaiting Client Response';
+  if (value === 'MANUAL_INVITE_CREATED') return 'Client Response Requested';
+  if (value === 'ACCEPTED') return 'Client Accepted';
+  if (value === 'DECLINED') return 'Client Declined';
+  if (value === 'REMINDER_DUE') return 'Reminder Due';
+  return label(value);
 }
 
 function formatDateTime(value: Date) {

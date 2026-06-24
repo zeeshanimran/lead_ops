@@ -5,6 +5,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import cookieParser = require('cookie-parser');
 import { AppModule } from './app.module';
 import { requireConfig, requireConfigNumber } from './config/required-env';
+import { PendingApprovalsGateway } from './realtime/pending-approvals.gateway';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -39,7 +40,8 @@ async function bootstrap() {
     SwaggerModule.setup('docs', app, SwaggerModule.createDocument(app, swaggerConfig));
   }
 
-  await app.listen(requireConfigNumber(config, 'PORT'));
+  const server = await app.listen(requireConfigNumber(config, 'PORT'));
+  app.get(PendingApprovalsGateway).attach(server);
 }
 
 void bootstrap();

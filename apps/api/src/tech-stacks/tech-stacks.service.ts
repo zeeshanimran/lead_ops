@@ -15,7 +15,7 @@ export class TechStacksService {
 
   findAll(user: AuthenticatedUser) {
     return this.prisma.techStack.findMany({
-      where: user.role === Role.SUPER_ADMIN ? {} : { isActive: true },
+      where: user.role === Role.SUPER_ADMIN ? {} : { isActive: true, assignedBds: { some: { id: user.sub } } },
       orderBy: { name: 'asc' },
     });
   }

@@ -17,6 +17,7 @@ const publicUser = {
   status: true,
   createdAt: true,
   updatedAt: true,
+  assignedTechStacks: { orderBy: { name: 'asc' as const } },
 } as const;
 
 @Injectable()
@@ -71,6 +72,7 @@ export class UsersService {
     const invitationTokenHash = createHash('sha256').update(inviteToken).digest('hex');
     const now = new Date();
     const invitationExpiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const techStackIds = await this.prepareTechStackAssignments(dto.role, dto.techStackIds, true);
     const user = await this.prisma.user.create({
       data: {
         name: dto.name,
@@ -81,11 +83,14 @@ export class UsersService {
         invitationTokenHash,
         invitationSentAt: now,
         invitationExpiresAt,
+        ...(techStackIds
+          ? { assignedTechStacks: { connect: techStackIds.map((stackId) => ({ id: stackId })) } }
+          : {}),
       },
       select: publicUser,
     });
     const sent = await this.email.sendInvite(user.email, user.name, user.role, inviteToken);
-    await this.auditLogs.write(actorId, 'USER_CREATED', 'User', user.id, { role: user.role });
+    await this.auditLogs.write(actorId, 'USER_CREATED', 'User', user.id, { role: user.role, techStackIds: techStackIds ?? undefined });
     return this.withInviteFallback(user, inviteToken, sent);
   }
 
@@ -94,6 +99,7 @@ export class UsersService {
     const invitationTokenHash = createHash('sha256').update(inviteToken).digest('hex');
     const now = new Date();
     const invitationExpiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const techStackIds = await this.prepareTechStackAssignments(dto.role, dto.techStackIds, true);
     const user = await this.prisma.user.update({
       where: { id },
       data: {
@@ -108,11 +114,14 @@ export class UsersService {
         invitationSentAt: now,
         invitationExpiresAt,
         invitationAcceptedAt: null,
+        assignedTechStacks: {
+          set: this.canAssignTechStacks(dto.role) && techStackIds ? techStackIds.map((stackId) => ({ id: stackId })) : [],
+        },
       },
       select: publicUser,
     });
     const sent = await this.email.sendInvite(user.email, user.name, user.role, inviteToken);
-    await this.auditLogs.write(actorId, 'USER_REINVITED', 'User', user.id, { role: user.role });
+    await this.auditLogs.write(actorId, 'USER_REINVITED', 'User', user.id, { role: user.role, techStackIds: techStackIds ?? undefined });
     return this.withInviteFallback(user, inviteToken, sent);
   }
 
@@ -155,6 +164,11 @@ export class UsersService {
     if (existing.role === Role.SUPER_ADMIN) {
       throw new BadRequestException('Super Admin cannot be managed from the users list');
     }
+    const nextRole = dto.role ?? existing.role;
+    if (dto.techStackIds !== undefined && !this.canAssignTechStacks(nextRole)) {
+      throw new BadRequestException('Tech stacks can only be assigned to BD and Closer users');
+    }
+    const techStackIds = await this.prepareTechStackAssignments(nextRole, dto.techStackIds);
     const user = await this.prisma.user.update({
       where: { id },
       data: {
@@ -163,11 +177,53 @@ export class UsersService {
         role: dto.role,
         status: dto.status,
         ...(dto.password ? { passwordHash: await argon2.hash(dto.password), refreshTokenHash: null } : {}),
+        ...(techStackIds !== undefined || !this.canAssignTechStacks(nextRole)
+          ? {
+              assignedTechStacks: {
+                set: this.canAssignTechStacks(nextRole) && techStackIds ? techStackIds.map((stackId) => ({ id: stackId })) : [],
+              },
+            }
+          : {}),
       },
       select: publicUser,
     });
-    await this.auditLogs.write(actorId, 'USER_UPDATED', 'User', user.id, { status: user.status });
+    await this.auditLogs.write(actorId, 'USER_UPDATED', 'User', user.id, {
+      status: user.status,
+      techStackIds: techStackIds ?? undefined,
+    });
     return user;
+  }
+
+  private canAssignTechStacks(role: Role) {
+    return role === Role.BD || role === Role.CLOSER;
+  }
+
+  private async prepareTechStackAssignments(role: Role, requestedIds?: string[], requireForRole = false) {
+    if (requestedIds !== undefined && !this.canAssignTechStacks(role)) {
+      throw new BadRequestException('Tech stacks can only be assigned to BD and Closer users');
+    }
+    if (requireForRole && this.canAssignTechStacks(role) && !requestedIds?.length) {
+      throw new BadRequestException('Assign at least one tech stack');
+    }
+    if (requestedIds === undefined) return undefined;
+
+    const techStackIds = Array.from(new Set(requestedIds));
+    if (requireForRole && this.canAssignTechStacks(role) && !techStackIds.length) {
+      throw new BadRequestException('Assign at least one tech stack');
+    }
+    if (techStackIds.length > 3) {
+      throw new BadRequestException('Assign a maximum of 3 tech stacks');
+    }
+    if (!techStackIds.length) return [];
+
+    const activeStacks = await this.prisma.techStack.findMany({
+      where: { id: { in: techStackIds }, isActive: true },
+      select: { id: true },
+    });
+    if (activeStacks.length !== techStackIds.length) {
+      throw new BadRequestException('Assign only active tech stacks');
+    }
+    return techStackIds;
   }
 
   async remove(actorId: string, id: string) {

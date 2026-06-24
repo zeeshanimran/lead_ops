@@ -105,6 +105,12 @@ export class AdminLeadController {
     return this.leads.reopen(user.sub, id, dto);
   }
 
+  @Post('leads/:id/calls')
+  @Roles(Role.SUPER_ADMIN)
+  schedule(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() dto: ScheduleLeadDto) {
+    return this.leads.schedule(user, id, dto);
+  }
+
   @Get('calls')
   @Roles(Role.SUPER_ADMIN)
   findCalls(@CurrentUser() user: AuthenticatedUser) {

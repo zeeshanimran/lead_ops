@@ -6,6 +6,7 @@ import { FeedbackModule } from './feedback/feedback.module';
 import { JobsModule } from './jobs/jobs.module';
 import { LeadsModule } from './leads/leads.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { RealtimeModule } from './realtime/realtime.module';
 import { ReportsModule } from './reports/reports.module';
 import { TechStacksModule } from './tech-stacks/tech-stacks.module';
 import { UsersModule } from './users/users.module';
@@ -20,6 +21,7 @@ import { UsersModule } from './users/users.module';
     LeadsModule,
     FeedbackModule,
     ReportsModule,
+    RealtimeModule,
     TechStacksModule,
     AuditLogsModule,
   ],
