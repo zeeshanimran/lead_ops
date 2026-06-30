@@ -211,9 +211,6 @@ export class UsersService {
     if (requireForRole && this.canAssignTechStacks(role) && !techStackIds.length) {
       throw new BadRequestException('Assign at least one tech stack');
     }
-    if (techStackIds.length > 3) {
-      throw new BadRequestException('Assign a maximum of 3 tech stacks');
-    }
     if (!techStackIds.length) return [];
 
     const activeStacks = await this.prisma.techStack.findMany({

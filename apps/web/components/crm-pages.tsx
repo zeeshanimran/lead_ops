@@ -346,7 +346,7 @@ export function UsersPage({ roleFilter }: { roleFilter?: Role }) {
             <div className={roleFilter ? 'md:col-span-3' : 'md:col-span-4'}>
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                 <p className="text-sm font-semibold text-slate-700">Tech Stacks</p>
-                <p className="text-xs font-bold text-slate-500">{form.techStackIds.length} / 3 selected</p>
+                <p className="text-xs font-bold text-slate-500">{form.techStackIds.length} selected</p>
               </div>
               <TechStackPicker
                 techStacks={techStacks ?? []}
@@ -354,7 +354,7 @@ export function UsersPage({ roleFilter }: { roleFilter?: Role }) {
                 onChange={(techStackIds) => setForm((current) => ({ ...current, techStackIds }))}
                 onCreated={reloadTechStacks}
               />
-              <p className="mt-2 text-xs font-semibold text-slate-500">BD and closer invites require 1 to 3 assigned tech stacks.</p>
+              <p className="mt-2 text-xs font-semibold text-slate-500">BD and closer invites require at least 1 assigned tech stack.</p>
             </div>
           ) : null}
         </form>
@@ -530,7 +530,7 @@ function UserEditPanel({
         <div>
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm font-semibold text-slate-700">Assigned tech stack</p>
-            <p className="text-xs font-bold text-slate-500">{form.techStackIds.length} / 3 selected</p>
+            <p className="text-xs font-bold text-slate-500">{form.techStackIds.length} selected</p>
           </div>
           <TechStackPicker
             techStacks={techStacks}
@@ -538,7 +538,7 @@ function UserEditPanel({
             onChange={(techStackIds) => setForm((current) => ({ ...current, techStackIds }))}
             onCreated={onCreatedStack}
           />
-          <p className="mt-2 text-xs font-semibold text-slate-500">BD and closer users require 1 to 3 assigned tech stacks.</p>
+          <p className="mt-2 text-xs font-semibold text-slate-500">BD and closer users require at least 1 assigned tech stack.</p>
         </div>
       ) : null}
       <div className="flex flex-wrap gap-2">
@@ -575,10 +575,10 @@ function TechStackPicker({
     .filter((stack) => !normalizedQuery || stack.name.toLowerCase().includes(normalizedQuery))
     .slice(0, 8);
   const exactMatch = techStacks.find((stack) => stack.name.toLowerCase() === normalizedQuery);
-  const canAddNew = normalizedQuery.length > 0 && !exactMatch && selectedIds.length < 3;
+  const canAddNew = normalizedQuery.length > 0 && !exactMatch;
 
   const selectStack = (stackId: string) => {
-    if (selectedSet.has(stackId) || selectedIds.length >= 3) return;
+    if (selectedSet.has(stackId)) return;
     onChange([...selectedIds, stackId]);
     setQuery('');
   };
@@ -587,7 +587,7 @@ function TechStackPicker({
   };
   const createAndSelect = async () => {
     const name = query.trim();
-    if (!name || selectedIds.length >= 3) return;
+    if (!name) return;
     setCreating(true);
     try {
       const stack = await api<TechStack>('/tech-stacks', {
@@ -620,9 +620,8 @@ function TechStackPicker({
       <div className="grid gap-2 rounded-md border border-slate-200 bg-slate-50 p-2">
         <input
           className={inputClass}
-          placeholder={selectedIds.length >= 3 ? 'Maximum 3 tech stacks selected' : 'Search or add tech stack'}
+          placeholder="Search or add tech stack"
           value={query}
-          disabled={selectedIds.length >= 3}
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
