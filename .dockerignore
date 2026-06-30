@@ -16,3 +16,6 @@ apps/api/.env.*
 apps/web/.env
 apps/web/.env.*
 *.log
+leadops-calendar-*.json
+*service-account*.json
+**/secrets

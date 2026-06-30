@@ -13,6 +13,7 @@ export type LeadStatus =
   | 'CLOSED'
   | 'DISMISSED';
 export type LeadCallStatus = 'SCHEDULED' | 'COMPLETED' | 'PENDING_FEEDBACK' | 'NO_SHOW' | 'RESCHEDULED' | 'CANCELLED';
+export type CalendarEventStatus = 'QUEUED' | 'PROCESSING' | 'CREATED' | 'FAILED' | 'CANCELLED';
 export type ManualInviteStatus = 'MANUAL_INVITE_PENDING' | 'MANUAL_INVITE_CREATED' | 'ACCEPTED' | 'DECLINED' | 'REMINDER_DUE';
 export type CallStage = 'SCREENING' | 'FIRST' | 'SECOND' | 'THIRD' | 'FOURTH' | 'FIFTH' | 'FINAL' | 'OFFERED';
 export type FeedbackCallStatus = 'TAKEN' | 'RESCHEDULED' | 'NO_SHOW' | 'SHIFTED';
@@ -81,9 +82,25 @@ export type LeadCall = {
   callNumber: number;
   callStage: CallStage;
   scheduledAt: string;
+  durationMinutes: number;
   status: LeadCallStatus;
   manualInviteStatus: ManualInviteStatus;
   manualInviteLink?: string;
+  clientJoinLink?: string;
+  candidateEmail?: string;
+  interviewerName?: string;
+  interviewerEmail?: string;
+  optionalGuestEmails?: string[];
+  calendarStatus?: CalendarEventStatus;
+  calendarEventId?: string;
+  calendarEventUrl?: string;
+  calendarMeetUrl?: string;
+  calendarAttendees?: Array<{ email?: string; responseStatus?: string; displayName?: string }>;
+  calendarOrganizer?: string;
+  calendarQueuedAt?: string;
+  calendarSyncedAt?: string;
+  calendarFailedAt?: string;
+  calendarError?: string;
   bdNotes?: string;
   closerNotes?: string;
   scheduledByBd?: User;

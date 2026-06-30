@@ -160,6 +160,15 @@ jobs:
           RUN_MIGRATIONS=${{ secrets.RUN_MIGRATIONS }}
           SEED_ON_START=${{ secrets.SEED_ON_START }}
           ENABLE_API_DOCS=${{ secrets.ENABLE_API_DOCS }}
+          GOOGLE_CALENDAR_ENABLED=${{ secrets.GOOGLE_CALENDAR_ENABLED }}
+          GOOGLE_APPLICATION_CREDENTIALS=${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
+          GOOGLE_CALENDAR_HOST_CREDENTIALS_FILE=${{ secrets.GOOGLE_CALENDAR_HOST_CREDENTIALS_FILE }}
+          GOOGLE_CALENDAR_IMPERSONATED_USER=${{ secrets.GOOGLE_CALENDAR_IMPERSONATED_USER }}
+          GOOGLE_CALENDAR_ID=${{ secrets.GOOGLE_CALENDAR_ID }}
+          GOOGLE_CALENDAR_TIMEZONE=${{ secrets.GOOGLE_CALENDAR_TIMEZONE }}
+          GOOGLE_CALENDAR_DEFAULT_DURATION_MINUTES=${{ secrets.GOOGLE_CALENDAR_DEFAULT_DURATION_MINUTES }}
+          GOOGLE_CALENDAR_INCLUDE_BD=${{ secrets.GOOGLE_CALENDAR_INCLUDE_BD }}
+          RUN_GOOGLE_CALENDAR_INTEGRATION_TEST=${{ secrets.RUN_GOOGLE_CALENDAR_INTEGRATION_TEST }}
           EOF
           sed -i 's/^ *//' /tmp/leadops.env.production
           scp -i ~/.ssh/ec2_key /tmp/leadops.env.production "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:${{ secrets.EC2_APP_DIR }}/.env.production"
@@ -178,8 +187,13 @@ jobs:
             services="$services web"
           fi
 
-          if [ -z "$services" ]; then
-            ssh -i ~/.ssh/ec2_key "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" "cd ${{ secrets.EC2_APP_DIR }} && docker compose --env-file .env.production -f docker-compose.prod.yml config --quiet"
+          if [ "${{ needs.changes.outputs.infra }}" = "true" ]; then
+            ssh -i ~/.ssh/ec2_key "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" "cd ${{ secrets.EC2_APP_DIR }} && \
+              echo '${{ secrets.DOCKERHUB_TOKEN }}' | docker login -u '${{ secrets.DOCKERHUB_USERNAME }}' --password-stdin && \
+              docker compose --env-file .env.production -f docker-compose.prod.yml config --quiet && \
+              docker compose --env-file .env.production -f docker-compose.prod.yml pull && \
+              docker compose --env-file .env.production -f docker-compose.prod.yml up -d --remove-orphans && \
+              docker image prune -f"
             exit 0
           fi
 

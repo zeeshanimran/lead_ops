@@ -8,8 +8,13 @@
     "start": "node dist/src/main.js",
     "lint": "eslint \"src/**/*.ts\"",
     "test:e2e:lead-flow": "tsx scripts/e2e-lead-call-flow.ts",
+    "test:google-calendar": "tsx scripts/google-calendar-integration.ts",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev --name init",
+    "prisma:migrate": "prisma migrate deploy",
+    "prisma:migrate:dev": "prisma migrate dev",
+    "db:migrate": "prisma migrate deploy",
+    "db:generate": "prisma generate",
+    "db:seed": "tsx prisma/seed.ts",
     "prisma:seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
@@ -29,6 +34,7 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
     "cookie-parser": "^1.4.7",
+    "googleapis": "^173.0.0",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "pg": "^8.21.0",

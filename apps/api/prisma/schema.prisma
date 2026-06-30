@@ -71,6 +71,14 @@ enum ManualInviteStatus {
   REMINDER_DUE
 }
 
+enum CalendarEventStatus {
+  QUEUED
+  PROCESSING
+  CREATED
+  FAILED
+  CANCELLED
+}
+
 enum FeedbackCallStatus {
   TAKEN
   RESCHEDULED
@@ -214,9 +222,25 @@ model LeadCall {
   scheduledByBdId    String
   closerId           String
   scheduledAt        DateTime
+  durationMinutes    Int                @default(30)
   status             LeadCallStatus     @default(SCHEDULED)
   manualInviteStatus ManualInviteStatus @default(MANUAL_INVITE_PENDING)
   manualInviteLink   String?
+  clientJoinLink     String?
+  candidateEmail     String?
+  interviewerName    String?
+  interviewerEmail   String?
+  optionalGuestEmails String[]           @default([])
+  calendarStatus     CalendarEventStatus?
+  calendarEventId    String?            @unique
+  calendarEventUrl   String?
+  calendarMeetUrl    String?
+  calendarAttendees  Json?
+  calendarOrganizer  String?
+  calendarQueuedAt   DateTime?
+  calendarSyncedAt   DateTime?
+  calendarFailedAt   DateTime?
+  calendarError      String?
   bdNotes            String?
   closerNotes        String?
   createdAt          DateTime           @default(now())
@@ -232,6 +256,7 @@ model LeadCall {
   @@index([scheduledByBdId])
   @@index([closerId])
   @@index([status])
+  @@index([calendarStatus])
 }
 
 model CallFeedback {
