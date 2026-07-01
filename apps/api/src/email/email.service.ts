@@ -22,6 +22,7 @@ type CallAssignmentEmailInput = {
   scheduledAt: Date;
   manualInviteStatus: string;
   manualInviteLink?: string | null;
+  clientJoinLink?: string | null;
   bdNotes?: string | null;
   lead: {
     companyName: string;
@@ -356,6 +357,7 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
       ['Scheduled time', scheduled],
       ['Scheduled by BD', `${input.bdName} (${input.bdEmail})`],
       ['Assigned closer', input.closerName],
+      ['Client join link', input.clientJoinLink],
       ['Client response', clientResponseLabel(input.manualInviteStatus)],
       ['Response link', input.manualInviteLink],
       ['BD notes', input.bdNotes],
@@ -415,6 +417,7 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
       ['Call', `#${input.callNumber} - ${label(input.callStage)}`],
       ['Scheduled time', scheduled],
       ['Assigned closer', input.closerName],
+      ['Client join link', input.clientJoinLink],
       ['Client response', clientResponseLabel(input.manualInviteStatus)],
       ['Response link', input.manualInviteLink],
       ['BD notes', input.bdNotes],
@@ -588,6 +591,7 @@ export class EmailService implements OnModuleInit, OnModuleDestroy {
       ['Call', `#${input.callNumber} - ${label(input.callStage)}`],
       ['Scheduled time', scheduled],
       ['BD owner', `${input.bdName} (${input.bdEmail})`],
+      ['Client join link', input.clientJoinLink],
       ['Client response', clientResponseLabel(input.manualInviteStatus)],
       ['Response link', input.manualInviteLink],
       ['BD notes', input.bdNotes],
@@ -815,7 +819,7 @@ function formatDateTime(value: Date) {
   }).format(value);
 }
 
-function redisConnectionOptions(redisUrl: string, maxRetriesPerRequest: number | null): ConnectionOptions {
+export function redisConnectionOptions(redisUrl: string, maxRetriesPerRequest: number | null): ConnectionOptions {
   const parsed = new URL(redisUrl);
   return {
     host: parsed.hostname,

@@ -42,6 +42,7 @@ function requireEnv(key: string) {
 async function main() {
   const users = await ensureUsers();
   const techStack = await ensureTechStack();
+  await assignTechStack(techStack.id, [users.bd.id, users.closer.id, users.otherCloser.id]);
 
   await assertPage('/login', 'login page');
   await assertPage('/admin/pending-approvals', 'admin pending approvals page');
@@ -75,8 +76,11 @@ async function main() {
   });
   ids.jobId = job.id;
 
-  const appliedJob = await api<any>(bd, `/jobs/${job.id}/apply`, { method: 'PATCH' });
-  assertEqual(appliedJob.status, 'APPLIED', 'job status after apply');
+  const approvedJob = await api<any>(admin, `/jobs/${job.id}/approve`, {
+    method: 'PATCH',
+    body: { notes: 'E2E admin job approval' },
+  });
+  assertEqual(approvedJob.status, 'APPROVED_BY_ADMIN', 'job status after admin approval');
 
   const lead = await api<any>(bd, '/bd/leads', {
     method: 'POST',
@@ -107,12 +111,17 @@ async function main() {
   await expectForbidden(otherBd, `/bd/leads/${lead.id}`, 'other BD cannot access assigned lead');
 
   const future = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
-  const call = await api<any>(bd, `/bd/leads/${lead.id}/calls`, {
+  const call = await api<any>(admin, `/admin/leads/${lead.id}/calls`, {
     method: 'POST',
     body: {
       closerId: users.closer.id,
       callStage: CallStage.SCREENING,
       scheduledAt: future,
+      durationMinutes: 30,
+      candidateEmail: `candidate.${runId}@example.com`,
+      interviewerName: 'E2E Interviewer',
+      interviewerEmail: `interviewer.${runId}@example.com`,
+      optionalGuestEmails: [`guest.${runId}@example.com`],
       manualInviteStatus: ManualInviteStatus.MANUAL_INVITE_CREATED,
       manualInviteLink: 'https://meet.example.com/e2e-test',
       bdNotes: 'E2E screening call scheduled',
@@ -122,6 +131,14 @@ async function main() {
   assertEqual(call.callNumber, 1, 'call number auto-generated');
   assertEqual(call.callStage, CallStage.SCREENING, 'screening call stage');
   assertEqual(call.closer.id, users.closer.id, 'call assigned to closer');
+  await expectForbidden(bd, `/bd/leads/${lead.id}/calls`, 'BD cannot schedule calls', {
+    method: 'POST',
+    body: {
+      closerId: users.closer.id,
+      callStage: CallStage.SCREENING,
+      scheduledAt: future,
+    },
+  });
 
   const bdLeadDetail = await api<any>(bd, `/bd/leads/${lead.id}`);
   assertEqual(bdLeadDetail.status, LeadStatus.CALL_SCHEDULED, 'lead status after first scheduled call');
@@ -238,6 +255,17 @@ function ensureTechStack() {
     where: { name: 'E2E Full Stack' },
     create: { name: 'E2E Full Stack', description: 'E2E active tech stack', isActive: true },
     update: { isActive: true },
+  });
+}
+
+async function assignTechStack(techStackId: string, userIds: string[]) {
+  await prisma.techStack.update({
+    where: { id: techStackId },
+    data: {
+      assignedBds: {
+        connect: userIds.map((id) => ({ id })),
+      },
+    },
   });
 }
 

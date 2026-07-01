@@ -5,6 +5,14 @@ coverage
 .env
 .env.local
 .env.production
+.env.*
+!.env.example
+!**/.env.example
+!.env.production.example
 *.log
 apps/api/generated
 PRODUCTION.MD
+!PRODUCTION.md
+leadops-calendar-*.json
+*service-account*.json
+**/secrets/*.json

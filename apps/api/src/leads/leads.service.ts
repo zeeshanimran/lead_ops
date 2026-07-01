@@ -1,6 +1,8 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { CallStage, LeadCallStatus, LeadStatus, ManualInviteStatus, Prisma, Role } from '@prisma/client';
+import { CalendarEventStatus, CallStage, LeadCallStatus, LeadStatus, ManualInviteStatus, Prisma, Role } from '@prisma/client';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { CalendarQueueService } from '../calendar/calendar-queue.service';
+import { GoogleCalendarService } from '../calendar/google-calendar.service';
 import { AuthenticatedUser } from '../common/types/authenticated-user';
 import { EmailService } from '../email/email.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -50,6 +52,8 @@ export class LeadsService {
     private readonly auditLogs: AuditLogsService,
     private readonly email: EmailService,
     private readonly pendingApprovals: PendingApprovalsGateway,
+    private readonly calendarQueue: CalendarQueueService,
+    private readonly googleCalendar: GoogleCalendarService,
   ) {}
 
   findAll(user: AuthenticatedUser, status?: LeadStatus) {
@@ -242,6 +246,7 @@ export class LeadsService {
 
     const callNumber = lead.calls.length + 1;
     const scheduledAt = new Date(dto.scheduledAt);
+    const calendarEnabled = this.googleCalendar.isEnabled();
     const result = await this.prisma.$transaction(async (tx) => {
       const call = await tx.leadCall.create({
         data: {
@@ -251,8 +256,16 @@ export class LeadsService {
           scheduledByBdId: bdOwner.id,
           closerId: dto.closerId,
           scheduledAt,
+          durationMinutes: dto.durationMinutes ?? this.googleCalendar.defaultDurationMinutes(),
           manualInviteStatus: dto.manualInviteStatus ?? ManualInviteStatus.MANUAL_INVITE_PENDING,
           manualInviteLink: dto.manualInviteLink,
+          clientJoinLink: dto.clientJoinLink,
+          candidateEmail: dto.candidateEmail,
+          interviewerName: dto.interviewerName,
+          interviewerEmail: dto.interviewerEmail,
+          optionalGuestEmails: dto.optionalGuestEmails ?? [],
+          calendarStatus: calendarEnabled ? CalendarEventStatus.QUEUED : undefined,
+          calendarQueuedAt: calendarEnabled ? new Date() : undefined,
           bdNotes: dto.bdNotes,
           status: LeadCallStatus.SCHEDULED,
         },
@@ -271,7 +284,14 @@ export class LeadsService {
           actorId: user.sub,
           action: 'CALL_SCHEDULED',
           description: `Admin scheduled Call #${callNumber} (${labelStage(dto.callStage)}) with ${closer.name}`,
-          metadata: { callId: call.id, closerId: dto.closerId, scheduledAt: scheduledAt.toISOString(), bdOwnerId: bdOwner.id },
+          metadata: {
+            callId: call.id,
+            closerId: dto.closerId,
+            scheduledAt: scheduledAt.toISOString(),
+            durationMinutes: dto.durationMinutes ?? this.googleCalendar.defaultDurationMinutes(),
+            bdOwnerId: bdOwner.id,
+            calendarStatus: calendarEnabled ? CalendarEventStatus.QUEUED : null,
+          },
         },
       });
       await tx.leadTimeline.create({
@@ -286,6 +306,7 @@ export class LeadsService {
       return call;
     });
 
+    await this.calendarQueue.enqueueSync(result.id);
     await this.auditLogs.write(user.sub, 'CALL_SCHEDULED', 'LeadCall', result.id, { leadId: id, closerId: dto.closerId, bdOwnerId: bdOwner.id });
     await this.notifyCallScheduled(result);
     await this.notifyBdCallScheduled(result);
@@ -300,6 +321,7 @@ export class LeadsService {
       scheduledAt: result.scheduledAt,
       manualInviteStatus: result.manualInviteStatus,
       manualInviteLink: result.manualInviteLink,
+      clientJoinLink: result.clientJoinLink,
       bdNotes: result.bdNotes,
       lead: {
         companyName: result.lead.companyName,
@@ -324,6 +346,62 @@ export class LeadsService {
       },
     });
     return result;
+  }
+
+  async rescheduleCall(user: AuthenticatedUser, id: string, dto: ScheduleLeadDto) {
+    if (user.role !== Role.SUPER_ADMIN) throw new ForbiddenException('Only Admin users can reschedule calls');
+    const call = await this.prisma.leadCall.findUnique({ where: { id }, include: { lead: true } });
+    if (!call) throw new NotFoundException('Call not found');
+    const scheduledAt = new Date(dto.scheduledAt);
+    const calendarEnabled = this.googleCalendar.isEnabled();
+    const updated = await this.prisma.leadCall.update({
+      where: { id },
+      data: {
+        callStage: dto.callStage,
+        closerId: dto.closerId,
+        scheduledAt,
+        durationMinutes: dto.durationMinutes ?? call.durationMinutes,
+        candidateEmail: dto.candidateEmail,
+        interviewerName: dto.interviewerName,
+        interviewerEmail: dto.interviewerEmail,
+        clientJoinLink: dto.clientJoinLink,
+        optionalGuestEmails: dto.optionalGuestEmails ?? [],
+        bdNotes: dto.bdNotes ?? call.bdNotes,
+        calendarStatus: calendarEnabled ? CalendarEventStatus.QUEUED : call.calendarStatus,
+        calendarQueuedAt: calendarEnabled ? new Date() : call.calendarQueuedAt,
+        calendarError: null,
+      },
+      include: includeCall,
+    });
+    await this.writeTimeline(call.leadId, user.sub, 'CALL_RESCHEDULED', `Admin rescheduled call #${call.callNumber}`, {
+      callId: id,
+      scheduledAt: scheduledAt.toISOString(),
+      calendarStatus: calendarEnabled ? CalendarEventStatus.QUEUED : call.calendarStatus,
+    });
+    await this.auditLogs.write(user.sub, 'CALL_RESCHEDULED', 'LeadCall', id, { leadId: call.leadId });
+    await this.calendarQueue.enqueueSync(id);
+    return updated;
+  }
+
+  async cancelCall(user: AuthenticatedUser, id: string) {
+    if (user.role !== Role.SUPER_ADMIN) throw new ForbiddenException('Only Admin users can cancel calls');
+    const call = await this.prisma.leadCall.findUnique({ where: { id } });
+    if (!call) throw new NotFoundException('Call not found');
+    const updated = await this.prisma.leadCall.update({
+      where: { id },
+      data: {
+        status: LeadCallStatus.CANCELLED,
+        calendarStatus: call.calendarEventId && this.googleCalendar.isEnabled() ? CalendarEventStatus.CANCELLED : call.calendarStatus,
+        calendarSyncedAt: call.calendarEventId && this.googleCalendar.isEnabled() ? new Date() : call.calendarSyncedAt,
+      },
+      include: includeCall,
+    });
+    if (call.calendarEventId && this.googleCalendar.isEnabled()) {
+      await this.googleCalendar.cancelLeadCallEvent(call.calendarEventId);
+    }
+    await this.writeTimeline(call.leadId, user.sub, 'CALL_CANCELLED', `Admin cancelled call #${call.callNumber}`, { callId: id });
+    await this.auditLogs.write(user.sub, 'CALL_CANCELLED', 'LeadCall', id, { leadId: call.leadId });
+    return updated;
   }
 
   async acceptCall(user: AuthenticatedUser, id: string) {
@@ -516,6 +594,7 @@ export class LeadsService {
       scheduledAt: call.scheduledAt,
       manualInviteStatus: call.manualInviteStatus,
       manualInviteLink: call.manualInviteLink,
+      clientJoinLink: call.clientJoinLink,
       bdNotes: call.bdNotes,
       lead: {
         companyName: call.lead.companyName,
@@ -554,6 +633,7 @@ export class LeadsService {
       scheduledAt: call.scheduledAt,
       manualInviteStatus: call.manualInviteStatus,
       manualInviteLink: call.manualInviteLink,
+      clientJoinLink: call.clientJoinLink,
       bdNotes: call.bdNotes,
       lead: {
         companyName: call.lead.companyName,

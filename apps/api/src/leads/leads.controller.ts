@@ -56,7 +56,7 @@ export class LeadsController {
   }
 
   @Patch(':id/schedule')
-  @Roles(Role.BD)
+  @Roles(Role.SUPER_ADMIN)
   schedule(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() dto: ScheduleLeadDto) {
     return this.leads.schedule(user, id, dto);
   }
@@ -115,6 +115,18 @@ export class AdminLeadController {
   @Roles(Role.SUPER_ADMIN)
   findCalls(@CurrentUser() user: AuthenticatedUser) {
     return this.leads.findCalls(user);
+  }
+
+  @Patch('calls/:id/reschedule')
+  @Roles(Role.SUPER_ADMIN)
+  rescheduleCall(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() dto: ScheduleLeadDto) {
+    return this.leads.rescheduleCall(user, id, dto);
+  }
+
+  @Patch('calls/:id/cancel')
+  @Roles(Role.SUPER_ADMIN)
+  cancelCall(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.leads.cancelCall(user, id);
   }
 }
 
