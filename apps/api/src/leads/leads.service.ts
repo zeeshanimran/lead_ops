@@ -245,7 +245,7 @@ export class LeadsService {
     }
 
     const callNumber = lead.calls.length + 1;
-    const scheduledAt = new Date(dto.scheduledAt);
+    const scheduledAt = parseScheduledAt(dto.scheduledAt);
     const calendarEnabled = this.googleCalendar.isEnabled();
     const result = await this.prisma.$transaction(async (tx) => {
       const call = await tx.leadCall.create({
@@ -351,7 +351,7 @@ export class LeadsService {
     if (user.role !== Role.SUPER_ADMIN) throw new ForbiddenException('Only Admin users can reschedule calls');
     const call = await this.prisma.leadCall.findUnique({ where: { id }, include: { lead: true } });
     if (!call) throw new NotFoundException('Call not found');
-    const scheduledAt = new Date(dto.scheduledAt);
+    const scheduledAt = parseScheduledAt(dto.scheduledAt);
     const calendarEnabled = this.googleCalendar.isEnabled();
     const updated = await this.prisma.leadCall.update({
       where: { id },
@@ -757,6 +757,14 @@ export class LeadsService {
 
 function labelStage(stage: CallStage) {
   return stage.toLowerCase().replace(/_/g, ' ');
+}
+
+function parseScheduledAt(value: string) {
+  if (/[zZ]|[+-]\d{2}:\d{2}$/.test(value)) return new Date(value);
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (!match) return new Date(value);
+  const [, year, month, day, hour, minute, second = '0'] = match;
+  return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour) - 5, Number(minute), Number(second)));
 }
 
 function labelStatus(status: string) {

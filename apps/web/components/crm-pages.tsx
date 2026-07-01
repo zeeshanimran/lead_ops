@@ -1180,7 +1180,7 @@ function ScheduleCallForm({ leadId, leadTechStackId, compact = false, adminMode 
       body: JSON.stringify({
         closerId: form.closerId,
         callStage: form.callStage,
-        scheduledAt: form.scheduledAt,
+        scheduledAt: toPakistanIso(form.scheduledAt),
         durationMinutes: form.durationMinutes,
         candidateEmail: form.profileName || undefined,
         interviewerName: form.interviewerName || undefined,
@@ -1308,6 +1308,12 @@ function InfoRows({ rows }: { rows: Array<[string, string | undefined | null]> }
 
 function splitEmails(value: string) {
   return value.split(',').map((email) => email.trim()).filter(Boolean);
+}
+
+function toPakistanIso(value: string) {
+  if (!value) return value;
+  if (/[zZ]|[+-]\d{2}:\d{2}$/.test(value)) return value;
+  return `${value.length === 16 ? `${value}:00` : value}+05:00`;
 }
 
 function CallsTable({ calls, role, reload }: { calls: LeadCall[]; role: 'admin' | 'bd'; reload: () => Promise<void> }) {
