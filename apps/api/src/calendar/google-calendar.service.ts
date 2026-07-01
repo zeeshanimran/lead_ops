@@ -35,12 +35,7 @@ export class GoogleCalendarService implements OnModuleInit {
       this.logger.log('Google Calendar integration disabled');
       return;
     }
-    const auth = new google.auth.GoogleAuth({
-      keyFile: calendarConfig.credentialsPath,
-      scopes: ['https://www.googleapis.com/auth/calendar'],
-      clientOptions: { subject: calendarConfig.impersonatedUser },
-    });
-    this.calendar = google.calendar({ version: 'v3', auth });
+    this.calendar = this.calendarForSubject(calendarConfig.impersonatedUser);
     this.logger.log(`Google Calendar integration enabled for ${calendarConfig.impersonatedUser}`);
   }
 
@@ -80,6 +75,29 @@ export class GoogleCalendarService implements OnModuleInit {
     const calendar = this.requireCalendar();
     const cfg = readGoogleCalendarConfig(this.config);
     await calendar.events.delete({ calendarId: cfg.calendarId, eventId, sendUpdates: 'all' });
+  }
+
+  async getCloserBusyPeriods(closerEmail: string, timeMin: Date, timeMax: Date) {
+    if (!this.isEnabled()) throw new Error('Google Calendar integration is disabled');
+    try {
+      const calendar = this.calendarForSubject(closerEmail);
+      const response = await calendar.freebusy.query({
+        requestBody: {
+          timeMin: timeMin.toISOString(),
+          timeMax: timeMax.toISOString(),
+          timeZone: 'Asia/Karachi',
+          items: [{ id: 'primary' }],
+        },
+      });
+      const busy = response.data.calendars?.primary?.busy ?? [];
+      return busy.flatMap((period) => {
+        if (!period.start || !period.end) return [];
+        return [{ start: new Date(period.start), end: new Date(period.end) }];
+      });
+    } catch (error) {
+      this.logger.warn(`Closer calendar availability check failed for ${closerEmail}: ${safeGoogleError(error)}`);
+      throw new Error('CLOSER_CALENDAR_UNAVAILABLE');
+    }
   }
 
   private toEvent(call: CalendarCall, cfg: ReturnType<typeof readGoogleCalendarConfig>): calendar_v3.Schema$Event {
@@ -142,6 +160,16 @@ export class GoogleCalendarService implements OnModuleInit {
     if (!this.calendar) throw new Error('Google Calendar integration is disabled');
     return this.calendar;
   }
+
+  private calendarForSubject(subject: string) {
+    const calendarConfig = readGoogleCalendarConfig(this.config);
+    const auth = new google.auth.GoogleAuth({
+      keyFile: calendarConfig.credentialsPath,
+      scopes: ['https://www.googleapis.com/auth/calendar'],
+      clientOptions: { subject },
+    });
+    return google.calendar({ version: 'v3', auth });
+  }
 }
 
 function buildEventDescription(call: CalendarCall) {
@@ -198,4 +226,9 @@ function titleLabel(value?: string | null) {
 function required(value: string | null | undefined, message: string) {
   if (!value) throw new Error(message);
   return value;
+}
+
+function safeGoogleError(error: unknown) {
+  if (!(error instanceof Error)) return 'Google Calendar request failed';
+  return error.message.includes('private_key') ? 'Google Calendar request failed' : error.message.slice(0, 300);
 }

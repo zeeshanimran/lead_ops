@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { LeadStatus, Role } from '@prisma/client';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -115,6 +115,14 @@ export class AdminLeadController {
   @Roles(Role.SUPER_ADMIN)
   findCalls(@CurrentUser() user: AuthenticatedUser) {
     return this.leads.findCalls(user);
+  }
+
+  @Get('closers/:closerId/availability')
+  @Roles(Role.SUPER_ADMIN)
+  @ApiQuery({ name: 'date', example: '2026-07-06' })
+  @ApiQuery({ name: 'durationMinutes', required: false, example: 60 })
+  getCloserAvailability(@Param('closerId') closerId: string, @Query('date') date: string, @Query('durationMinutes') durationMinutes?: string) {
+    return this.leads.getCloserAvailability(closerId, date, durationMinutes);
   }
 
   @Patch('calls/:id/reschedule')

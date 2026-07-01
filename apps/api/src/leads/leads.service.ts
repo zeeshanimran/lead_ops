@@ -1,5 +1,7 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { CalendarEventStatus, CallStage, LeadCallStatus, LeadStatus, ManualInviteStatus, Prisma, Role } from '@prisma/client';
+import { DateTime } from 'luxon';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { CalendarQueueService } from '../calendar/calendar-queue.service';
 import { GoogleCalendarService } from '../calendar/google-calendar.service';
@@ -11,6 +13,16 @@ import { ApprovalDto } from './dto/approval.dto';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { ManualCalendarDto } from './dto/manual-calendar.dto';
 import { ScheduleLeadDto } from './dto/schedule-lead.dto';
+import {
+  buildAvailabilitySlots,
+  defaultAvailabilityConfig,
+  parsePakistanDate,
+  parseScheduledAt,
+  slotMatches,
+  toOffsetIso,
+  type AvailabilityConfig,
+  type BusyPeriod,
+} from './availability';
 
 const publicUser = { id: true, name: true, email: true, role: true, status: true } as const;
 
@@ -54,12 +66,42 @@ export class LeadsService {
     private readonly pendingApprovals: PendingApprovalsGateway,
     private readonly calendarQueue: CalendarQueueService,
     private readonly googleCalendar: GoogleCalendarService,
+    private readonly config: ConfigService,
   ) {}
 
   findAll(user: AuthenticatedUser, status?: LeadStatus) {
     if (user.role === Role.SUPER_ADMIN) return this.findAdminLeads(status);
     if (user.role === Role.BD) return this.findBdLeads(user.sub, status);
     return this.findCloserLeads(user.sub, status);
+  }
+
+  async getCloserAvailability(closerId: string, date: string, durationMinutesRaw?: string) {
+    const durationMinutes = Number(durationMinutesRaw ?? this.googleCalendar.defaultDurationMinutes());
+    if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) throw new BadRequestException('durationMinutes must be a positive number');
+    const cfg = this.availabilityConfig();
+    let day: DateTime;
+    try {
+      day = parsePakistanDate(date, cfg.timezone);
+    } catch {
+      throw new BadRequestException('date must be a valid YYYY-MM-DD Pakistan date');
+    }
+    if (day < DateTime.now().setZone(cfg.timezone).startOf('day')) throw new BadRequestException('date cannot be in the past');
+
+    const closer = await this.findActiveCloser(closerId);
+    const availability = await this.buildCloserAvailability(closer, date, durationMinutes, cfg);
+    return {
+      closerId: closer.id,
+      closerName: closer.name,
+      date,
+      timezone: cfg.timezone,
+      durationMinutes,
+      bufferAfterMinutes: cfg.bufferAfterMinutes,
+      slotIntervalMinutes: cfg.slotIntervalMinutes,
+      windowStart: toOffsetIso(availability.windowStart),
+      windowEnd: toOffsetIso(availability.windowEnd),
+      availableSlots: availability.availableSlots,
+      ...(availability.reason ? { reason: availability.reason } : {}),
+    };
   }
 
   findAdminLeads(status?: LeadStatus) {
@@ -208,15 +250,7 @@ export class LeadsService {
 
   async schedule(user: AuthenticatedUser, id: string, dto: ScheduleLeadDto) {
     if (user.role !== Role.SUPER_ADMIN) throw new ForbiddenException('Only Admin users can schedule calls');
-    const closer = await this.prisma.user.findFirst({
-      where: {
-        id: dto.closerId,
-        role: Role.CLOSER,
-        status: 'ACTIVE',
-        deletedAt: null,
-      },
-    });
-    if (!closer) throw new BadRequestException('Active closer is required');
+    const closer = await this.findActiveCloser(dto.closerId);
     const lead = await this.prisma.lead.findUnique({
       where: { id },
       include: {
@@ -245,9 +279,11 @@ export class LeadsService {
     }
 
     const callNumber = lead.calls.length + 1;
-    const scheduledAt = parseScheduledAt(dto.scheduledAt);
+    const scheduledAt = parseScheduledAt(dto.scheduledAt, this.availabilityConfig().timezone);
     const calendarEnabled = this.googleCalendar.isEnabled();
     const result = await this.prisma.$transaction(async (tx) => {
+      await this.lockCloser(tx, dto.closerId);
+      await this.assertCloserSlotAvailable(tx, closer, scheduledAt, dto.durationMinutes ?? this.googleCalendar.defaultDurationMinutes());
       const call = await tx.leadCall.create({
         data: {
           leadId: id,
@@ -351,26 +387,34 @@ export class LeadsService {
     if (user.role !== Role.SUPER_ADMIN) throw new ForbiddenException('Only Admin users can reschedule calls');
     const call = await this.prisma.leadCall.findUnique({ where: { id }, include: { lead: true } });
     if (!call) throw new NotFoundException('Call not found');
-    const scheduledAt = parseScheduledAt(dto.scheduledAt);
+    const closer = await this.findActiveCloser(dto.closerId);
+    const scheduledAt = parseScheduledAt(dto.scheduledAt, this.availabilityConfig().timezone);
     const calendarEnabled = this.googleCalendar.isEnabled();
-    const updated = await this.prisma.leadCall.update({
-      where: { id },
-      data: {
-        callStage: dto.callStage,
-        closerId: dto.closerId,
-        scheduledAt,
-        durationMinutes: dto.durationMinutes ?? call.durationMinutes,
-        candidateEmail: dto.candidateEmail,
-        interviewerName: dto.interviewerName,
-        interviewerEmail: dto.interviewerEmail,
-        clientJoinLink: dto.clientJoinLink,
-        optionalGuestEmails: dto.optionalGuestEmails ?? [],
-        bdNotes: dto.bdNotes ?? call.bdNotes,
-        calendarStatus: calendarEnabled ? CalendarEventStatus.QUEUED : call.calendarStatus,
-        calendarQueuedAt: calendarEnabled ? new Date() : call.calendarQueuedAt,
-        calendarError: null,
-      },
-      include: includeCall,
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await this.lockCloser(tx, dto.closerId);
+      await this.assertCloserSlotAvailable(tx, closer, scheduledAt, dto.durationMinutes ?? call.durationMinutes, id, call.calendarEventId ? {
+        start: call.scheduledAt,
+        end: new Date(call.scheduledAt.getTime() + call.durationMinutes * 60 * 1000),
+      } : undefined);
+      return tx.leadCall.update({
+        where: { id },
+        data: {
+          callStage: dto.callStage,
+          closerId: dto.closerId,
+          scheduledAt,
+          durationMinutes: dto.durationMinutes ?? call.durationMinutes,
+          candidateEmail: dto.candidateEmail,
+          interviewerName: dto.interviewerName,
+          interviewerEmail: dto.interviewerEmail,
+          clientJoinLink: dto.clientJoinLink,
+          optionalGuestEmails: dto.optionalGuestEmails ?? [],
+          bdNotes: dto.bdNotes ?? call.bdNotes,
+          calendarStatus: calendarEnabled ? CalendarEventStatus.QUEUED : call.calendarStatus,
+          calendarQueuedAt: calendarEnabled ? new Date() : call.calendarQueuedAt,
+          calendarError: null,
+        },
+        include: includeCall,
+      });
     });
     await this.writeTimeline(call.leadId, user.sub, 'CALL_RESCHEDULED', `Admin rescheduled call #${call.callNumber}`, {
       callId: id,
@@ -541,6 +585,98 @@ export class LeadsService {
       where: { id: techStackId, isActive: true, assignedBds: { some: { id: bdId } } },
     });
     return count > 0;
+  }
+
+  private async findActiveCloser(closerId: string) {
+    const closer = await this.prisma.user.findFirst({
+      where: { id: closerId, role: Role.CLOSER, status: 'ACTIVE', deletedAt: null },
+      select: publicUser,
+    });
+    if (!closer) throw new BadRequestException('Active closer is required');
+    return closer;
+  }
+
+  private availabilityConfig(): AvailabilityConfig {
+    return {
+      timezone: this.config.get<string>('CLOSER_AVAILABILITY_TIMEZONE') || defaultAvailabilityConfig.timezone,
+      start: this.config.get<string>('CLOSER_AVAILABILITY_START') || defaultAvailabilityConfig.start,
+      end: this.config.get<string>('CLOSER_AVAILABILITY_END') || defaultAvailabilityConfig.end,
+      workingDays: (this.config.get<string>('CLOSER_AVAILABILITY_WORKING_DAYS') || defaultAvailabilityConfig.workingDays.join(',')).split(',').map((day) => day.trim().toUpperCase()).filter(Boolean),
+      slotIntervalMinutes: Number(this.config.get<string>('CLOSER_AVAILABILITY_SLOT_INTERVAL_MINUTES') || defaultAvailabilityConfig.slotIntervalMinutes),
+      bufferAfterMinutes: Number(this.config.get<string>('CLOSER_AVAILABILITY_BUFFER_AFTER_MINUTES') || defaultAvailabilityConfig.bufferAfterMinutes),
+    };
+  }
+
+  private async buildCloserAvailability(
+    closer: { id: string; name: string; email: string },
+    date: string,
+    durationMinutes: number,
+    cfg = this.availabilityConfig(),
+    client: Prisma.TransactionClient | PrismaService = this.prisma,
+    excludeCallId?: string,
+    ignoredGooglePeriod?: BusyPeriod,
+  ) {
+    const day = parsePakistanDate(date, cfg.timezone);
+    const windowStart = day.set({ hour: 0, minute: 0 }).toJSDate();
+    const windowEnd = day.plus({ days: 1 }).toJSDate();
+    const [leadOpsBusy, googleBusy] = await Promise.all([
+      this.getLeadOpsBusyPeriods(client, closer.id, windowStart, windowEnd, excludeCallId),
+      this.getGoogleBusyPeriods(closer.email, windowStart, windowEnd, ignoredGooglePeriod),
+    ]);
+    return buildAvailabilitySlots(date, durationMinutes, cfg, [...leadOpsBusy, ...googleBusy]);
+  }
+
+  private async assertCloserSlotAvailable(
+    client: Prisma.TransactionClient,
+    closer: { id: string; name: string; email: string },
+    scheduledAt: Date,
+    durationMinutes: number,
+    excludeCallId?: string,
+    ignoredGooglePeriod?: BusyPeriod,
+  ) {
+    const cfg = this.availabilityConfig();
+    const date = DateTime.fromJSDate(scheduledAt, { zone: cfg.timezone }).toFormat('yyyy-MM-dd');
+    const availability = await this.buildCloserAvailability(closer, date, durationMinutes, cfg, client, excludeCallId, ignoredGooglePeriod);
+    if (!availability.availableSlots.some((slot) => slotMatches(slot.start, scheduledAt))) {
+      throw new ConflictException({ code: 'CLOSER_SLOT_UNAVAILABLE', message: 'This time slot is no longer available. Please select another time.' });
+    }
+  }
+
+  private async getLeadOpsBusyPeriods(
+    client: Prisma.TransactionClient | PrismaService,
+    closerId: string,
+    windowStart: Date,
+    windowEnd: Date,
+    excludeCallId?: string,
+  ): Promise<BusyPeriod[]> {
+    const calls = await client.leadCall.findMany({
+      where: {
+        closerId,
+        ...(excludeCallId ? { id: { not: excludeCallId } } : {}),
+        status: { in: [LeadCallStatus.SCHEDULED, LeadCallStatus.PENDING_FEEDBACK, LeadCallStatus.RESCHEDULED, LeadCallStatus.NO_SHOW] },
+        scheduledAt: { lt: windowEnd, gt: new Date(windowStart.getTime() - 24 * 60 * 60 * 1000) },
+      },
+      select: { scheduledAt: true, durationMinutes: true, status: true },
+    });
+    const now = Date.now();
+    return calls.flatMap((call) => {
+      const end = new Date(call.scheduledAt.getTime() + call.durationMinutes * 60 * 1000);
+      if (call.status === LeadCallStatus.NO_SHOW && end.getTime() <= now) return [];
+      return [{ start: call.scheduledAt, end }];
+    });
+  }
+
+  private async getGoogleBusyPeriods(closerEmail: string, windowStart: Date, windowEnd: Date, ignoredGooglePeriod?: BusyPeriod) {
+    try {
+      const busy = await this.googleCalendar.getCloserBusyPeriods(closerEmail, windowStart, windowEnd);
+      return ignoredGooglePeriod ? busy.filter((period) => !samePeriod(period, ignoredGooglePeriod)) : busy;
+    } catch {
+      throw new ServiceUnavailableException({ code: 'CLOSER_CALENDAR_UNAVAILABLE', message: "The Closer's calendar availability could not be checked." });
+    }
+  }
+
+  private lockCloser(client: Prisma.TransactionClient, closerId: string) {
+    return client.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${closerId}))`;
   }
 
   private async notifyLeadSubmitted(lead: Prisma.LeadGetPayload<{ include: typeof includeLead }>) {
@@ -759,16 +895,13 @@ function labelStage(stage: CallStage) {
   return stage.toLowerCase().replace(/_/g, ' ');
 }
 
-function parseScheduledAt(value: string) {
-  if (/[zZ]|[+-]\d{2}:\d{2}$/.test(value)) return new Date(value);
-  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/);
-  if (!match) return new Date(value);
-  const [, year, month, day, hour, minute, second = '0'] = match;
-  return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour) - 5, Number(minute), Number(second)));
-}
-
 function labelStatus(status: string) {
   return status.toLowerCase().replace(/_/g, ' ');
+}
+
+function samePeriod(left: BusyPeriod, right: BusyPeriod) {
+  return Math.abs(left.start.getTime() - right.start.getTime()) < 60 * 1000
+    && Math.abs(left.end.getTime() - right.end.getTime()) < 60 * 1000;
 }
 
 function clientResponseLabel(status: string) {

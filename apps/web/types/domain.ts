@@ -109,6 +109,26 @@ export type LeadCall = {
   feedback?: CallFeedback[];
 };
 
+export type AvailabilitySlot = {
+  start: string;
+  end: string;
+  label: string;
+};
+
+export type CloserAvailability = {
+  closerId: string;
+  closerName: string;
+  date: string;
+  timezone: string;
+  durationMinutes: number;
+  bufferAfterMinutes: number;
+  slotIntervalMinutes: number;
+  windowStart: string;
+  windowEnd: string;
+  availableSlots: AvailabilitySlot[];
+  reason?: string;
+};
+
 export type CallFeedback = {
   id: string;
   leadCallId: string;
