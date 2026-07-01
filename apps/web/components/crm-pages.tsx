@@ -9,6 +9,7 @@ import { label, shortDateTime } from '@/lib/format';
 import {
   CallFeedback,
   CallStage,
+  CloserAvailability,
   FeedbackCallStatus,
   FeedbackResult,
   Job,
@@ -1160,7 +1161,8 @@ function ScheduleCallForm({ leadId, leadTechStackId, compact = false, adminMode 
   const [form, setForm] = useState({
     closerId: '',
     callStage: 'SCREENING' as CallStage,
-    scheduledAt: '',
+    scheduledDate: '',
+    selectedSlotStart: '',
     durationMinutes: 30,
     profileName: '',
     interviewerName: '',
@@ -1169,10 +1171,37 @@ function ScheduleCallForm({ leadId, leadTechStackId, compact = false, adminMode 
     clientJoinLink: '',
     callNotes: '',
   });
+  const [availability, setAvailability] = useState<CloserAvailability | null>(null);
+  const [availabilityLoading, setAvailabilityLoading] = useState(false);
+  const [availabilityError, setAvailabilityError] = useState('');
   useEffect(() => {
     if (!form.closerId || eligibleClosers.some((closer) => closer.id === form.closerId)) return;
-    setForm((current) => ({ ...current, closerId: '' }));
+    setForm((current) => ({ ...current, closerId: '', selectedSlotStart: '' }));
   }, [eligibleClosers, form.closerId]);
+  const loadAvailability = async () => {
+    if (!form.closerId || !form.scheduledDate || !form.durationMinutes) {
+      setAvailability(null);
+      setAvailabilityError('');
+      return;
+    }
+    setAvailabilityLoading(true);
+    try {
+      const query = new URLSearchParams({ date: form.scheduledDate, durationMinutes: String(form.durationMinutes) });
+      const data = await api<CloserAvailability>(`/admin/closers/${form.closerId}/availability?${query.toString()}`, { suppressToast: true });
+      setAvailability(data);
+      setAvailabilityError('');
+      setForm((current) => data.availableSlots.some((slot) => slot.start === current.selectedSlotStart) ? current : { ...current, selectedSlotStart: '' });
+    } catch (err) {
+      setAvailability(null);
+      setAvailabilityError(err instanceof Error ? err.message : 'Availability could not be loaded.');
+      setForm((current) => ({ ...current, selectedSlotStart: '' }));
+    } finally {
+      setAvailabilityLoading(false);
+    }
+  };
+  useEffect(() => {
+    void loadAvailability();
+  }, [form.closerId, form.scheduledDate, form.durationMinutes]);
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     await api(`${adminMode ? '/admin' : '/bd'}/leads/${leadId}/calls`, {
@@ -1180,7 +1209,7 @@ function ScheduleCallForm({ leadId, leadTechStackId, compact = false, adminMode 
       body: JSON.stringify({
         closerId: form.closerId,
         callStage: form.callStage,
-        scheduledAt: toPakistanIso(form.scheduledAt),
+        scheduledAt: form.selectedSlotStart,
         durationMinutes: form.durationMinutes,
         candidateEmail: form.profileName || undefined,
         interviewerName: form.interviewerName || undefined,
@@ -1190,7 +1219,8 @@ function ScheduleCallForm({ leadId, leadTechStackId, compact = false, adminMode 
         bdNotes: form.callNotes || undefined,
       }),
     });
-    setForm({ closerId: '', callStage: 'SCREENING', scheduledAt: '', durationMinutes: 30, profileName: '', interviewerName: '', interviewDetails: '', optionalGuestEmails: '', clientJoinLink: '', callNotes: '' });
+    setForm({ closerId: '', callStage: 'SCREENING', scheduledDate: '', selectedSlotStart: '', durationMinutes: 30, profileName: '', interviewerName: '', interviewDetails: '', optionalGuestEmails: '', clientJoinLink: '', callNotes: '' });
+    setAvailability(null);
     await onSaved();
   };
   return (
@@ -1200,8 +1230,28 @@ function ScheduleCallForm({ leadId, leadTechStackId, compact = false, adminMode 
         {eligibleClosers.map((closer) => <option key={closer.id} value={closer.id}>{closer.name}</option>)}
       </select>
       <select className={inputClass} value={form.callStage} onChange={(e) => setForm({ ...form, callStage: e.target.value as CallStage })}>{callStages.map((value) => <option key={value} value={value}>{label(value)}</option>)}</select>
-      <input className={inputClass} type="datetime-local" value={form.scheduledAt} onChange={(e) => setForm({ ...form, scheduledAt: e.target.value })} required />
+      <input className={inputClass} type="date" value={form.scheduledDate} onChange={(e) => setForm({ ...form, scheduledDate: e.target.value, selectedSlotStart: '' })} required />
       <input className={inputClass} type="number" min={1} value={form.durationMinutes} onChange={(e) => setForm({ ...form, durationMinutes: Number(e.target.value) })} required />
+      <div className={`${compact ? '' : 'md:col-span-3'} grid gap-2`}>
+        <p className="text-xs font-semibold text-slate-500">All available times are shown in Pakistan Standard Time (PKT).</p>
+        {availabilityLoading ? <p className="text-sm font-semibold text-slate-500">Loading available slots...</p> : null}
+        {availabilityError ? <p className="text-sm font-semibold text-red-700">{availabilityError}</p> : null}
+        {!availabilityLoading && availability && !availability.availableSlots.length ? <p className="text-sm font-semibold text-slate-500">{availability.reason ?? 'No available slots for this closer, date, and duration.'}</p> : null}
+        {availability?.availableSlots.length ? (
+          <div className="flex flex-wrap gap-2">
+            {availability.availableSlots.map((slot) => (
+              <button
+                type="button"
+                key={slot.start}
+                className={`rounded-md border px-3 py-2 text-sm font-bold ${form.selectedSlotStart === slot.start ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-400'}`}
+                onClick={() => setForm({ ...form, selectedSlotStart: slot.start })}
+              >
+                {slot.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
       {!compact ? (
         <>
           <input className={inputClass} placeholder="Profile name" value={form.profileName} onChange={(e) => setForm({ ...form, profileName: e.target.value })} />
@@ -1212,7 +1262,7 @@ function ScheduleCallForm({ leadId, leadTechStackId, compact = false, adminMode 
           <textarea className={inputClass} placeholder="Call notes" value={form.callNotes} onChange={(e) => setForm({ ...form, callNotes: e.target.value })} />
         </>
       ) : null}
-      <Button type="submit"><CalendarPlus size={16} /> Schedule Call</Button>
+      <Button type="submit" disabled={!form.selectedSlotStart}><CalendarPlus size={16} /> Schedule Call</Button>
     </form>
   );
 }
@@ -1308,12 +1358,6 @@ function InfoRows({ rows }: { rows: Array<[string, string | undefined | null]> }
 
 function splitEmails(value: string) {
   return value.split(',').map((email) => email.trim()).filter(Boolean);
-}
-
-function toPakistanIso(value: string) {
-  if (!value) return value;
-  if (/[zZ]|[+-]\d{2}:\d{2}$/.test(value)) return value;
-  return `${value.length === 16 ? `${value}:00` : value}+05:00`;
 }
 
 function CallsTable({ calls, role, reload }: { calls: LeadCall[]; role: 'admin' | 'bd'; reload: () => Promise<void> }) {
