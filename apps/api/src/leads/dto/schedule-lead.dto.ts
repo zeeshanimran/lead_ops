@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { CallStage, ManualInviteStatus } from '@prisma/client';
+import { CallStage } from '@prisma/client';
 import { IsArray, IsDateString, IsEmail, IsEnum, IsInt, IsOptional, IsString, IsUrl, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -23,9 +23,9 @@ export class ScheduleLeadDto {
   @Min(1)
   durationMinutes?: number;
 
-  @ApiPropertyOptional({ example: 'candidate@example.com' })
+  @ApiPropertyOptional({ example: 'Jane Candidate' })
   @IsOptional()
-  @IsEmail()
+  @IsString()
   candidateEmail?: string;
 
   @ApiPropertyOptional({ example: 'Hiring Manager' })
@@ -33,9 +33,9 @@ export class ScheduleLeadDto {
   @IsString()
   interviewerName?: string;
 
-  @ApiPropertyOptional({ example: 'interviewer@example.com' })
+  @ApiPropertyOptional({ example: 'Client panel interview details' })
   @IsOptional()
-  @IsEmail()
+  @IsString()
   interviewerEmail?: string;
 
   @ApiPropertyOptional({ type: [String] })
@@ -43,16 +43,6 @@ export class ScheduleLeadDto {
   @IsArray()
   @IsEmail({}, { each: true })
   optionalGuestEmails?: string[];
-
-  @ApiPropertyOptional({ enum: ManualInviteStatus })
-  @IsOptional()
-  @IsEnum(ManualInviteStatus)
-  manualInviteStatus?: ManualInviteStatus;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsUrl({ require_protocol: true })
-  manualInviteLink?: string;
 
   @ApiPropertyOptional()
   @IsOptional()

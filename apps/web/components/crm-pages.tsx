@@ -76,13 +76,12 @@ function statusTone(status?: string): 'red' | 'green' | 'yellow' | 'slate' | 'bl
 
 const TABLE_PAGE_SIZE = 10;
 const callStages: CallStage[] = ['SCREENING', 'FIRST', 'SECOND', 'THIRD', 'FOURTH', 'FIFTH', 'FINAL', 'OFFERED'];
-const manualStatuses: ManualInviteStatus[] = ['MANUAL_INVITE_PENDING', 'MANUAL_INVITE_CREATED', 'ACCEPTED', 'DECLINED', 'REMINDER_DUE'];
 
 function clientResponseLabel(value?: ManualInviteStatus | string | null) {
-  if (value === 'MANUAL_INVITE_PENDING') return 'Awaiting Client Response';
-  if (value === 'MANUAL_INVITE_CREATED') return 'Client Response Requested';
-  if (value === 'ACCEPTED') return 'Client Accepted';
-  if (value === 'DECLINED') return 'Client Declined';
+  if (value === 'MANUAL_INVITE_PENDING') return 'Awaiting Call Acceptance';
+  if (value === 'MANUAL_INVITE_CREATED') return 'Calendar Invite Created';
+  if (value === 'ACCEPTED') return 'Accepted';
+  if (value === 'DECLINED') return 'Declined';
   if (value === 'REMINDER_DUE') return 'Reminder Due';
   return label(value);
 }
@@ -1163,14 +1162,12 @@ function ScheduleCallForm({ leadId, leadTechStackId, compact = false, adminMode 
     callStage: 'SCREENING' as CallStage,
     scheduledAt: '',
     durationMinutes: 30,
-    candidateEmail: '',
+    profileName: '',
     interviewerName: '',
-    interviewerEmail: '',
+    interviewDetails: '',
     optionalGuestEmails: '',
-    manualInviteStatus: 'MANUAL_INVITE_PENDING' as ManualInviteStatus,
-    manualInviteLink: '',
     clientJoinLink: '',
-    bdNotes: '',
+    callNotes: '',
   });
   useEffect(() => {
     if (!form.closerId || eligibleClosers.some((closer) => closer.id === form.closerId)) return;
@@ -1181,17 +1178,19 @@ function ScheduleCallForm({ leadId, leadTechStackId, compact = false, adminMode 
     await api(`${adminMode ? '/admin' : '/bd'}/leads/${leadId}/calls`, {
       method: 'POST',
       body: JSON.stringify({
-        ...form,
-        candidateEmail: form.candidateEmail || undefined,
+        closerId: form.closerId,
+        callStage: form.callStage,
+        scheduledAt: form.scheduledAt,
+        durationMinutes: form.durationMinutes,
+        candidateEmail: form.profileName || undefined,
         interviewerName: form.interviewerName || undefined,
-        interviewerEmail: form.interviewerEmail || undefined,
+        interviewerEmail: form.interviewDetails || undefined,
         optionalGuestEmails: splitEmails(form.optionalGuestEmails),
-        manualInviteLink: form.manualInviteLink || undefined,
         clientJoinLink: form.clientJoinLink || undefined,
-        bdNotes: form.bdNotes || undefined,
+        bdNotes: form.callNotes || undefined,
       }),
     });
-    setForm({ closerId: '', callStage: 'SCREENING', scheduledAt: '', durationMinutes: 30, candidateEmail: '', interviewerName: '', interviewerEmail: '', optionalGuestEmails: '', manualInviteStatus: 'MANUAL_INVITE_PENDING', manualInviteLink: '', clientJoinLink: '', bdNotes: '' });
+    setForm({ closerId: '', callStage: 'SCREENING', scheduledAt: '', durationMinutes: 30, profileName: '', interviewerName: '', interviewDetails: '', optionalGuestEmails: '', clientJoinLink: '', callNotes: '' });
     await onSaved();
   };
   return (
@@ -1205,14 +1204,12 @@ function ScheduleCallForm({ leadId, leadTechStackId, compact = false, adminMode 
       <input className={inputClass} type="number" min={1} value={form.durationMinutes} onChange={(e) => setForm({ ...form, durationMinutes: Number(e.target.value) })} required />
       {!compact ? (
         <>
-          <input className={inputClass} type="email" placeholder="Candidate/profile email" value={form.candidateEmail} onChange={(e) => setForm({ ...form, candidateEmail: e.target.value })} />
+          <input className={inputClass} placeholder="Profile name" value={form.profileName} onChange={(e) => setForm({ ...form, profileName: e.target.value })} />
           <input className={inputClass} placeholder="Interviewer name" value={form.interviewerName} onChange={(e) => setForm({ ...form, interviewerName: e.target.value })} />
-          <input className={inputClass} type="email" placeholder="Interviewer email" value={form.interviewerEmail} onChange={(e) => setForm({ ...form, interviewerEmail: e.target.value })} />
+          <input className={inputClass} placeholder="Interview details" value={form.interviewDetails} onChange={(e) => setForm({ ...form, interviewDetails: e.target.value })} />
           <input className={inputClass} placeholder="Optional guests, comma separated" value={form.optionalGuestEmails} onChange={(e) => setForm({ ...form, optionalGuestEmails: e.target.value })} />
-          <input className={inputClass} type="url" placeholder="Client join link (Zoom, Teams, etc.)" value={form.clientJoinLink} onChange={(e) => setForm({ ...form, clientJoinLink: e.target.value })} />
-          <select className={inputClass} value={form.manualInviteStatus} onChange={(e) => setForm({ ...form, manualInviteStatus: e.target.value as ManualInviteStatus })}>{manualStatuses.map((value) => <option key={value} value={value}>{label(value)}</option>)}</select>
-          <input className={inputClass} type="url" placeholder="Client response link" value={form.manualInviteLink} onChange={(e) => setForm({ ...form, manualInviteLink: e.target.value })} />
-          <input className={inputClass} placeholder="BD notes" value={form.bdNotes} onChange={(e) => setForm({ ...form, bdNotes: e.target.value })} />
+          <input className={inputClass} type="url" placeholder="Call/join link" value={form.clientJoinLink} onChange={(e) => setForm({ ...form, clientJoinLink: e.target.value })} />
+          <textarea className={inputClass} placeholder="Call notes" value={form.callNotes} onChange={(e) => setForm({ ...form, callNotes: e.target.value })} />
         </>
       ) : null}
       <Button type="submit"><CalendarPlus size={16} /> Schedule Call</Button>
@@ -1319,7 +1316,7 @@ function CallsTable({ calls, role, reload }: { calls: LeadCall[]; role: 'admin' 
     <>
       <div className="table-wrap">
         <table className="lead-table">
-          <thead><tr><th>#</th><th>Stage</th><th>Scheduled</th><th>Closer</th><th>Status</th><th>Calendar</th><th>Client Response</th><th>Feedback</th><th>Actions</th></tr></thead>
+          <thead><tr><th>#</th><th>Stage</th><th>Scheduled</th><th>Closer</th><th>Status</th><th>Calendar</th><th>Feedback</th><th>Actions</th></tr></thead>
           <tbody>
             {calls.map((call) => (
               <tr key={call.id}>
@@ -1330,18 +1327,17 @@ function CallsTable({ calls, role, reload }: { calls: LeadCall[]; role: 'admin' 
                 <td><Badge tone={statusTone(call.status)}>{label(call.status)}</Badge></td>
                 <td>
                   {call.calendarStatus ? <Badge tone={statusTone(call.calendarStatus)}>{label(call.calendarStatus)}</Badge> : '-'}
-                  {call.clientJoinLink ? <><br /><a className="font-semibold text-red-700" href={call.clientJoinLink} target="_blank">Client link</a></> : null}
+                  {call.clientJoinLink ? <><br /><a className="font-semibold text-red-700" href={call.clientJoinLink} target="_blank">Join link</a></> : null}
                   {call.calendarMeetUrl ? <><br /><a className="font-semibold text-red-700" href={call.calendarMeetUrl} target="_blank">Meet</a></> : null}
                   {call.calendarEventUrl ? <> · <a className="font-semibold text-red-700" href={call.calendarEventUrl} target="_blank">Event</a></> : null}
                 </td>
-                <td><Badge tone={statusTone(call.manualInviteStatus)}>{clientResponseLabel(call.manualInviteStatus)}</Badge>{call.manualInviteLink ? <><br /><a className="font-semibold text-red-700" href={call.manualInviteLink} target="_blank">Open link</a></> : null}</td>
                 <td>
                   <Button variant="light" className="px-2.5" title="View closer feedback" onClick={() => setFeedbackCall(call)}>
                     <Eye size={16} />
                     <span>{call.feedback?.length ?? 0}</span>
                   </Button>
                 </td>
-                <td>{role === 'bd' ? <ManualInviteAction call={call} reload={reload} /> : <span className="text-sm text-slate-500">Read-only</span>}</td>
+                <td><span className="text-sm text-slate-500">Read-only</span></td>
               </tr>
             ))}
           </tbody>
@@ -1392,16 +1388,6 @@ function FeedbackLine({ feedback }: { feedback: CallFeedback }) {
       </div>
       {feedback.nextAction ? <p className="mt-2 text-sm font-semibold text-slate-700">Next action: {feedback.nextAction}</p> : null}
       {feedback.nextCallRequired ? <p className="mt-1 text-sm font-semibold text-amber-700">Next call required</p> : null}
-    </div>
-  );
-}
-
-function ManualInviteAction({ call, reload }: { call: LeadCall; reload: () => Promise<void> }) {
-  const [manualInviteStatus, setManualInviteStatus] = useState<ManualInviteStatus>(call.manualInviteStatus);
-  return (
-    <div className="grid min-w-0 max-w-xs gap-2 sm:min-w-48">
-      <select className={inputClass} value={manualInviteStatus} onChange={(e) => setManualInviteStatus(e.target.value as ManualInviteStatus)}>{manualStatuses.map((value) => <option key={value} value={value}>{clientResponseLabel(value)}</option>)}</select>
-      <Button onClick={async () => { await api(`/bd/leads/${call.leadId}/manual-calendar`, { method: 'PATCH', body: JSON.stringify({ leadCallId: call.id, manualInviteStatus }) }); await reload(); }}>Update Response</Button>
     </div>
   );
 }
@@ -1473,14 +1459,12 @@ export function CloserCallDetailPage({ id }: { id: string }) {
         <Card>
           <h3 className="mb-3 font-black">Join Call</h3>
           <InfoRows rows={[
-            ['Client Join Link', call.clientJoinLink],
+            ['Call/Join Link', call.clientJoinLink],
             ['Google Meet', call.calendarMeetUrl],
-            ['Client Response', clientResponseLabel(call.manualInviteStatus)],
-            ['Response Link', call.manualInviteLink],
-            ['BD Notes', call.bdNotes],
+            ['Call Notes', call.bdNotes],
           ]} />
           <div className="mt-3 flex flex-wrap gap-2">
-            {call.clientJoinLink ? <a className="inline-flex rounded-md bg-brand-red px-3 py-2 text-sm font-bold text-white" href={call.clientJoinLink} target="_blank">Join Client Call</a> : null}
+            {call.clientJoinLink ? <a className="inline-flex rounded-md bg-brand-red px-3 py-2 text-sm font-bold text-white" href={call.clientJoinLink} target="_blank">Open Join Link</a> : null}
             {call.calendarMeetUrl ? <a className="inline-flex rounded-md bg-slate-900 px-3 py-2 text-sm font-bold text-white" href={call.calendarMeetUrl} target="_blank">Open Google Meet</a> : null}
           </div>
         </Card>
@@ -1491,9 +1475,10 @@ export function CloserCallDetailPage({ id }: { id: string }) {
             ['Organizer', call.calendarOrganizer],
             ['Event', call.calendarEventUrl],
             ['Meet', call.calendarMeetUrl],
-            ['Client Join Link', call.clientJoinLink],
-            ['Candidate', call.candidateEmail],
-            ['Interviewer', call.interviewerEmail],
+            ['Call/Join Link', call.clientJoinLink],
+            ['Profile Name', call.candidateEmail],
+            ['Interviewer Name', call.interviewerName],
+            ['Interview Details', call.interviewerEmail],
             ['Synced', call.calendarSyncedAt ? shortDateTime(call.calendarSyncedAt) : undefined],
           ]} />
         </Card>
