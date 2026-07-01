@@ -86,8 +86,8 @@ export class GoogleCalendarService implements OnModuleInit {
     const start = call.scheduledAt;
     const end = new Date(start.getTime() + call.durationMinutes * 60 * 1000);
     const attendees = attendeeEmails(call, cfg.includeBd).map((email) => ({ email }));
-    const summary = `${call.lead.companyName} - ${label(call.callStage)} with ${call.closer.name}`;
-    const description = buildEventDescription(call, this.appUrl());
+    const summary = `${call.closer.name} - ${titleLabel(call.callStage)}`;
+    const description = buildEventDescription(call);
 
     return {
       summary,
@@ -142,61 +142,21 @@ export class GoogleCalendarService implements OnModuleInit {
     if (!this.calendar) throw new Error('Google Calendar integration is disabled');
     return this.calendar;
   }
-
-  private appUrl() {
-    return (this.config.get<string>('APP_WEB_URL') ?? this.config.get<string>('APP_URL') ?? '').replace(/\/$/, '');
-  }
 }
 
-function buildEventDescription(call: CalendarCall, appUrl: string) {
-  const leadUrl = appUrl ? `${appUrl}/admin/leads/${encodeURIComponent(call.leadId)}` : null;
-  const closerCallUrl = appUrl ? `${appUrl}/closer/calls/${encodeURIComponent(call.id)}` : null;
+function buildEventDescription(call: CalendarCall) {
   const rows = [
-    section('LeadOps', [
-      pair('Call', `#${call.callNumber} - ${titleLabel(call.callStage)}`),
-      pair('LeadOps lead', leadUrl),
-      pair('Closer call page', closerCallUrl),
-    ]),
-    section('Lead', [
-      pair('Company', call.lead.companyName),
-      pair('Profile/Candidate', call.lead.profileName),
-      pair('Tech stack', call.lead.techStack.name),
-      pair('Nature', titleLabel(call.lead.nature)),
-      pair('Payrate', call.lead.payrate),
-      pair('Resume/Profile URL', call.lead.resumeUrl),
-      pair('Proof type', titleLabel(call.lead.proofType)),
-      pair('Proof URL', call.lead.proofUrl),
-      pair('Proof notes', call.lead.proofNotes),
-      pair('Admin notes', call.lead.adminNotes),
-      pair('Created by BD', userLine(call.lead.createdByBd)),
-      pair('Assigned BD', userLine(call.lead.assignedBd)),
-    ]),
-    section('Job', call.lead.job
-      ? [
-          pair('Job ID', call.lead.job.jobId),
-          pair('Platform', call.lead.job.platform),
-          pair('Company', call.lead.job.companyName),
-          pair('Tech stack', call.lead.job.techStack),
-          pair('Status', titleLabel(call.lead.job.status)),
-          pair('Job link', call.lead.job.jobLink),
-          pair('Job description', call.lead.job.jobDescription),
-          pair('Job BD', userLine(call.lead.job.bd)),
-          pair('Admin notes', call.lead.job.adminNotes),
-          pair('Rejection reason', call.lead.job.rejectionReason),
-        ]
-      : [pair('Linked job', 'No job linked')]),
     section('Meeting', [
-      pair('Scheduled time', call.scheduledAt.toISOString()),
-      pair('Duration', `${call.durationMinutes} minutes`),
-      pair('Client join link', call.clientJoinLink),
-      pair('Google Meet link', call.calendarMeetUrl),
       pair('Closer', userLine(call.closer)),
-      pair('Calendar owner/BD', userLine(call.scheduledByBd)),
-      pair('Candidate email', call.candidateEmail),
-      pair('Interviewer', call.interviewerName),
-      pair('Interviewer email', call.interviewerEmail),
+      pair('Type of call', titleLabel(call.callStage)),
+      pair('Date time', call.scheduledAt.toISOString()),
+      pair('Duration', `${call.durationMinutes} minutes`),
+      pair('Profile name', call.candidateEmail ?? call.lead.profileName),
+      pair('Interviewer name', call.interviewerName),
+      pair('Interview details', call.interviewerEmail),
       pair('Optional guests', call.optionalGuestEmails.length ? call.optionalGuestEmails.join(', ') : null),
-      pair('Scheduling notes', call.bdNotes),
+      pair('Call/join link', call.clientJoinLink),
+      pair('Call notes', call.bdNotes),
     ]),
   ];
   return rows.filter(Boolean).join('\n\n');
@@ -221,8 +181,6 @@ function attendeeEmails(call: CalendarCall, includeBd: boolean) {
   return Array.from(
     new Set(
       [
-        call.candidateEmail,
-        call.interviewerEmail,
         call.closer.email,
         includeBd ? call.scheduledByBd.email : null,
         ...call.optionalGuestEmails,
@@ -231,10 +189,6 @@ function attendeeEmails(call: CalendarCall, includeBd: boolean) {
         .map((email) => email.trim().toLowerCase()),
     ),
   );
-}
-
-function label(value: string) {
-  return value.toLowerCase().replace(/_/g, ' ');
 }
 
 function titleLabel(value?: string | null) {
